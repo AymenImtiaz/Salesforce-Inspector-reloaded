@@ -307,11 +307,19 @@ function initButton(sfHost, inInspector) {
       // These event listeners are only enabled when the popup is active to avoid interfering with Salesforce when not using the inspector
       addEventListener("click", outsidePopupClick);
       popupEl.focus();
+      // Present the Formula Prettifier FAB alongside the popup (stays inactive until the user opens the Inspector).
+      if (typeof FormulaPrettifierLauncher !== "undefined") {
+        FormulaPrettifierLauncher.show(sfHost);
+      }
     }
     function closePopup() {
       rootEl.classList.remove("insext-active");
       removeEventListener("click", outsidePopupClick);
       popupEl.blur();
+      // Hide the Formula Prettifier FAB (an already-open Prettifier window stays open).
+      if (typeof FormulaPrettifierLauncher !== "undefined") {
+        FormulaPrettifierLauncher.hideFab();
+      }
     }
     function togglePopup(openCondition, closeCondition = !openCondition) {
       if (openCondition) {

@@ -59,6 +59,7 @@
         "inspect-inline.css"
       ],
       "js": [
+        "formula-prettifier-launcher.js",
         "button.js",
         "inspect-inline.js"
       ]
@@ -87,7 +88,9 @@
         "options.html",
         "event-monitor.html",
         "flow-scanner.html",
-        "debug-log.html"
+        "debug-log.html",
+        "formula-prettifier.html",
+        "formula-prettifier-launcher.css"
       ],
       "matches": [
         "https://*.salesforce.com/*",

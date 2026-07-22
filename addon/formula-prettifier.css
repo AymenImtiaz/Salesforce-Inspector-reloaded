@@ -1,0 +1,1253 @@
+/* Formula Prettifier — visual identity ported faithfully from the AppExchange LWC (formulaPrettifier.css). :host→:root for the extension page context. */
+
+/* The page inside the iframe IS the app's window body — keep it white like the
+   app (the app's .floating-window is white), overriding any SLDS/page default. */
+html, body.fp-embedded {
+  background: #ffffff;
+}
+body.fp-embedded {
+  margin: 0;
+}
+
+/* ========================================
+   Theme Colors
+   ======================================== */
+:root {
+  --primary-color: rebeccapurple;
+  --primary-hover: rgb(90, 44, 135);
+  --background-light: #f3f3f3;
+  --background-white: #ffffff;
+  --border-color: #dddbda;
+  --border-radius: 4px;
+  --spacing-small: 0.5rem;
+  --spacing-medium: 1rem;
+  --disabled-color: #c9c9c9;
+  --text-muted: #999;
+  --shadow-purple: rebeccapurple;
+}
+
+/* ========================================
+   Text Selection
+   ======================================== */
+.formula-output ::selection {
+  background-color: rgba(102, 51, 153, 0.3);
+  color: inherit;
+}
+
+.formula-output {
+  cursor: text;
+}
+
+.formula-line {
+  user-select: text;
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  cursor: text;
+}
+
+/* Prevent line numbers and gutter from being visually highlighted when selecting */
+.line-gutter,
+.line-number,
+.gutter-arrow-space,
+.gutter-collapse-toggle {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  cursor: default;
+}
+
+/* ========================================
+   Floating Action Button (FAB)
+   ======================================== */
+.fab-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9999;
+}
+
+.fab-button {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: transparent;
+  border: 2px solid rgba(102, 51, 153, 0.2);
+  box-shadow: 0 2px 8px rgba(102, 51, 153, 0.15),
+              0 1px 4px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  position: relative;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.fab-button:hover {
+  transform: scale(1.1);
+  border-color: rgba(102, 51, 153, 0.5);
+  box-shadow: 0 4px 12px rgba(102, 51, 153, 0.3),
+              0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.fab-button:active {
+  transform: scale(0.95);
+}
+
+.fab-icon,
+.fab-icon svg {
+  color: rebeccapurple;
+  fill: rebeccapurple;
+}
+
+/* ========================================
+   Floating Window
+   ======================================== */
+.floating-window {
+  position: fixed;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3),
+              0 4px 12px rgba(102, 51, 153, 0.2);
+  display: flex;
+  flex-direction: column;
+  z-index: 9998;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  min-width: max(660px, 50vw);
+}
+
+.window-header {
+  background: linear-gradient(to bottom, #ffffff 0%, #f8f8f8 100%);
+  color: #3c3c3c;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: move;
+  user-select: none;
+  border-bottom: 1px solid #e0e0e0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.window-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+  font-size: 18px;
+  color: #080707;
+}
+
+.window-icon,
+.window-icon svg {
+  color: rebeccapurple;
+  fill: rebeccapurple;
+}
+
+.window-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.window-control-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: rebeccapurple;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+  transition: all 0.2s ease;
+}
+
+.window-control-btn:hover {
+  background: rgba(102, 51, 153, 0.1);
+  transform: scale(1.1);
+}
+
+.window-control-btn:active {
+  transform: scale(0.95);
+}
+
+.close-btn:hover {
+  background: rebeccapurple;
+  color: white;
+}
+
+.minimize-btn span {
+  margin-bottom: 5px;
+}
+
+.window-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 20px;
+  height: 20px;
+  cursor: nwse-resize;
+}
+
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 0 12px 12px;
+  border-color: transparent transparent rgba(102, 51, 153, 0.3) transparent;
+}
+
+/* ========================================
+   Output Section
+   ======================================== */
+.output-section {
+  background: var(--background-light);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-medium) 0;
+}
+
+.output-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-small);
+  padding: 0 var(--spacing-medium);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-small);
+}
+
+.formula-result-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: linear-gradient(135deg, rgba(102, 51, 153, 0.08) 0%, rgba(102, 51, 153, 0.04) 100%);
+  border: 1px solid rgba(102, 51, 153, 0.2);
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.result-label {
+  color: #706e6b;
+  font-weight: 500;
+}
+
+.result-value {
+  color: rebeccapurple;
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+.result-hyperlink {
+  color: var(--primary-color);
+  font-weight: 600;
+  text-decoration: underline;
+  transition: opacity 0.2s ease;
+}
+
+.result-hyperlink:hover {
+  opacity: 0.8;
+}
+
+.result-help-icon {
+  margin-left: 0px;
+  position: relative;
+  top: -2px;
+}
+
+.result-loading {
+  color: #706e6b;
+  font-style: italic;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ========================================
+   Buttons
+   ======================================== */
+.copy-button-container {
+  position: relative;
+  display: inline-block;
+}
+
+.copy-button {
+  --slds-c-icon-color-foreground: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.copy-button:hover:not([disabled]) {
+  --slds-c-icon-color-foreground: var(--primary-hover);
+  color: var(--primary-hover);
+}
+
+/* Inline SVG icons (copy/refresh/setup) render in the app's purple via
+   currentColor; give them a consistent icon size. */
+.fp-icon {
+  width: 0.9rem;
+  height: 0.9rem;
+  vertical-align: middle;
+}
+.copy-button, .refresh-button, .setup-button {
+  color: var(--primary-color);
+}
+.copy-button:hover:not([disabled]),
+.refresh-button:hover:not([disabled]),
+.setup-button:hover:not([disabled]) {
+  color: var(--primary-hover);
+}
+.setup-button[disabled] {
+  color: var(--disabled-color);
+}
+
+.copied-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--primary-color);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  margin-bottom: 5px;
+  animation: tooltipFadeIn 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  font-weight: 500;
+}
+
+.copied-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: var(--primary-color);
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.refresh-button {
+  --slds-c-icon-color-foreground: var(--primary-color);
+}
+
+.refresh-button:hover:not([disabled]) {
+  --slds-c-icon-color-foreground: var(--primary-hover);
+}
+
+.formula-output {
+  font-family: 'Courier New', Consolas, Monaco, monospace;
+  font-size: 14px;
+  line-height: 1.4;
+  background: var(--background-white);
+  border-radius: var(--border-radius);
+  overflow: visible;
+}
+
+/* IDE-style line container */
+.formula-line-container {
+  display: flex;
+  min-height: 18px;
+}
+
+.formula-line-container[data-hidden="true"] {
+  display: none;
+}
+
+.formula-line-container:hover {
+  background: rgba(148, 90, 209, 0.05);
+}
+
+/* Line number gutter */
+.line-gutter {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 32px;
+  width: 32px;
+  padding: 0 2px;
+  background: var(--background-light);
+  border-right: 1px solid #e0e0e0;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+
+.line-number {
+  color: #999;
+  font-size: 10px;
+  text-align: right;
+  min-width: 14px;
+}
+
+.gutter-arrow-space {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gutter-collapse-toggle {
+  cursor: pointer;
+  color: #999;
+  font-size: 10px;
+  width: 12px;
+  height: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.gutter-collapse-toggle[data-is-collapsed="true"] {
+  opacity: 1;
+}
+
+.formula-output:has(.line-gutter:hover) .gutter-collapse-toggle {
+  opacity: 1;
+}
+
+.gutter-collapse-toggle:hover {
+  background: rgba(148, 90, 209, 0.15);
+  border-radius: 2px;
+  color: var(--primary-color);
+}
+
+.formula-line {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  flex: 1;
+  padding: 0 var(--spacing-small) 0 var(--spacing-small);
+  position: relative;
+}
+
+/* Indent guide lines intentionally disabled to match the app's clean output. */
+
+/* ========================================
+   Syntax Highlighting Colors
+   ======================================== */
+:root {
+  --token-function: #945ad1ee;
+  --token-field: #49b3e4;
+  --token-number: #6f81e7;
+  --token-string: #67ba90;
+  --token-operator: #c21ddb;
+  --token-text: #e5b275;
+  --bracket-violet: #945ad1ee;
+  --bracket-indigo: #6f81e7;
+  --bracket-blue: #49b3e4;
+  --bracket-green: #67ba90;
+  --bracket-yellow: #d7c876;
+  --bracket-orange: #e5b275;
+  --bracket-red: #df7373;
+}
+
+.token-function {
+  color: var(--token-function);
+  font-weight: bold;
+  display: inline-block;
+  pointer-events: auto;
+}
+
+.token-field {
+  color: var(--token-field);
+  font-weight: bold;
+  display: inline-block;
+  pointer-events: auto;
+}
+
+
+.token-number {
+  color: var(--token-number);
+  font-weight: bold;
+  display: inline-block;
+}
+
+.token-string {
+  color: var(--token-string);
+  font-weight: bold;
+  display: inline;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+.token-operator {
+  color: var(--token-operator);
+  font-weight: bold;
+  display: inline-block;
+}
+
+.token-text {
+  color: var(--token-text);
+  display: inline-block;
+}
+
+.token-comment {
+  color: #808080;
+  font-style: italic;
+  display: inline-block;
+}
+
+/* ========================================
+   Bracket Depth Colors (VIBGYOR Rainbow)
+   ======================================== */
+.token-bracket[data-bracket-depth="0"] {
+  color: var(--bracket-violet);
+}
+
+.token-bracket[data-bracket-depth="1"] {
+  color: var(--bracket-indigo);
+}
+
+.token-bracket[data-bracket-depth="2"] {
+  color: var(--bracket-blue);
+}
+
+.token-bracket[data-bracket-depth="3"] {
+  color: var(--bracket-green);
+}
+
+.token-bracket[data-bracket-depth="4"] {
+  color: var(--bracket-yellow);
+}
+
+.token-bracket[data-bracket-depth="5"] {
+  color: var(--bracket-orange);
+}
+
+.token-bracket[data-bracket-depth="6"] {
+  color: var(--bracket-red);
+}
+
+.token-bracket {
+  color: var(--text-muted);
+  font-weight: bold;
+  transition: text-shadow 0.2s ease;
+  cursor: pointer;
+}
+
+.token-bracket:hover {
+  text-shadow: 0 0 8px currentColor,
+               0 0 12px currentColor,
+               0 0 16px currentColor;
+}
+
+/* Highlight matching brackets */
+.token-bracket.highlight-scope {
+  text-shadow: 0 0 2px currentColor,
+               0 0 4px currentColor;
+  filter: brightness(1.2) saturate(1.8) contrast(1.2);
+  font-weight: 900;
+}
+
+/* Extra emphasis for yellow brackets (depth 4) to prevent washout */
+.token-bracket[data-bracket-depth="4"].highlight-scope {
+  filter: brightness(1.0) saturate(2.5) contrast(1.5);
+}
+
+/* Extra emphasis for orange brackets (depth 5) to prevent washout */
+.token-bracket[data-bracket-depth="5"].highlight-scope {
+  filter: brightness(1.0) saturate(2.3) contrast(1.4);
+}
+
+/* ========================================
+   Collapsible Toggle
+   ======================================== */
+.collapse-toggle {
+  cursor: pointer;
+  user-select: none;
+  color: var(--primary-color);
+  font-weight: bold;
+  padding: 2px;
+  margin-right: 4px;
+  display: inline-block;
+  transition: background 0.2s;
+  font-size: 12px;
+}
+
+.collapse-toggle:hover {
+  background: #f3e8ff;
+  border-radius: 3px;
+}
+
+.collapsed-preview {
+  color: var(--text-muted);
+  font-style: italic;
+  margin-left: 4px;
+}
+
+/* ========================================
+   Custom Components
+   ======================================== */
+/* Prettify Button Wrapper */
+.prettify-button-wrapper {
+  position: relative;
+  display: inline-block;
+  border-radius: 50px;
+  transition: transform 0.3s ease;
+  margin-top: 4px;
+}
+
+.prettify-button-wrapper:hover {
+  transform: translateY(-2px);
+}
+
+.custom-brand-button {
+  --slds-c-button-brand-color-background: var(--primary-color);
+  --slds-c-button-brand-color-background-hover: var(--primary-color);
+  --slds-c-button-brand-color-background-active: var(--primary-color);
+  --slds-c-button-radius-border: 50px;
+  --slds-c-button-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+  --slds-c-button-brand-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+  --slds-c-button-brand-shadow-focus: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+  --slds-c-button-color-border: transparent;
+  --slds-c-button-color-border-hover: transparent;
+  --slds-c-button-color-border-focus: transparent;
+  --slds-c-button-brand-color-border: transparent;
+  --slds-c-button-brand-color-border-hover: transparent;
+  --slds-c-button-brand-color-border-active: transparent;
+  --slds-c-button-brand-color-border-focus: transparent;
+  border: none !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -1px 0 rgba(0, 0, 0, 0.1) !important;
+}
+
+.custom-brand-button::after,
+.custom-brand-button::before {
+  display: none !important;
+}
+
+.custom-brand-button:focus,
+.custom-brand-button:focus-visible,
+.custom-brand-button:active {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -1px 0 rgba(0, 0, 0, 0.1) !important;
+  outline: none !important;
+  border: none !important;
+}
+
+.custom-brand-button:hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -1px 0 rgba(0, 0, 0, 0.1) !important;
+  border: none !important;
+}
+
+.button-shine {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  transition: left 0.5s ease;
+  pointer-events: none;
+  border-radius: 50px;
+  overflow: hidden;
+}
+
+.prettify-button-wrapper:hover .button-shine {
+  left: 100%;
+}
+
+@keyframes buttonPulse {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 rgba(148, 90, 209, 0);
+  }
+  50% {
+    opacity: 0.95;
+    box-shadow: 0 0 15px rgba(148, 90, 209, 0.3);
+  }
+}
+
+/* ========================================
+   Toggle Buttons
+   ======================================== */
+.toggle-container {
+  position: relative;
+  display: inline-flex;
+  background: var(--background-light);
+  border-radius: 50px;
+  padding: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.toggle-slider {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  height: calc(100% - 8px);
+  background: var(--primary-color);
+  border-radius: 50px;
+  transition: all 0.3s ease;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+  z-index: 0;
+}
+
+.toggle-slider::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.15), transparent);
+  border-radius: 50px 50px 0 0;
+  pointer-events: none;
+}
+
+.toggle-container[data-mode="select"] .toggle-slider {
+  width: var(--select-width, calc(50% - 4px));
+  transform: translateX(0);
+}
+
+.toggle-container[data-mode="paste"] .toggle-slider {
+  width: var(--paste-width, calc(50% - 4px));
+  transform: translateX(var(--select-width, 50%));
+}
+
+.toggle-button {
+  position: relative;
+  z-index: 1;
+  padding: 10px 24px;
+  border: none;
+  border-radius: 50px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.3s ease;
+  background: transparent;
+  color: var(--primary-color);
+  white-space: nowrap;
+}
+
+.toggle-button.active {
+  color: white;
+}
+
+.toggle-button:focus {
+  outline: none;
+}
+
+/* ========================================
+   Card and Icons
+   ======================================== */
+lightning-card {
+  --slds-c-icon-color-foreground-default: var(--primary-color);
+}
+
+:root lightning-card ::slotted(lightning-icon) {
+  --sds-c-icon-color-foreground: var(--primary-color);
+}
+
+/* ========================================
+   Searchable type-ahead picker (Object / Field)
+   ======================================== */
+.fp-typeahead {
+  position: relative;
+}
+
+.fp-typeahead-input {
+  width: 100%;
+}
+
+.fp-typeahead-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  margin: 2px 0 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--background-white);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15),
+              0 2px 6px rgba(102, 51, 153, 0.1);
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.fp-typeahead-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #080707;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fp-typeahead-item:hover,
+.fp-typeahead-item.fp-active {
+  background: rgba(102, 51, 153, 0.1);
+  color: var(--primary-color);
+}
+
+.fp-typeahead-empty {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ========================================
+   Field Controls
+   ======================================== */
+/* Override helptext icon colors to match theme */
+:root lightning-helptext {
+  --slds-c-icon-color-foreground: var(--primary-color) !important;
+  --slds-c-icon-color-foreground-default: var(--primary-color) !important;
+}
+
+lightning-combobox {
+  --slds-c-icon-color-foreground: var(--primary-color);
+  --slds-c-icon-color-foreground-default: var(--primary-color);
+}
+
+/* Field-level help icon shown next to combobox labels. */
+.fp-help-icon {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 4px;
+  color: var(--primary-color);
+  cursor: help;
+  position: relative;
+  outline: none;
+}
+.fp-help-icon .slds-icon {
+  fill: var(--primary-color);
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+/* Styled tooltip popover shown on hover (matches the app's lightning-helptext).
+   Positioned via JS (position:fixed viewport coords, intelligent flip) so it is
+   never clipped by the window/output overflow or the header bar. The arrow is a
+   custom pseudo-element placed at --fp-arrow-left (the exact icon offset) so it
+   always points right at the icon, even after horizontal clamping. */
+.fp-help-popover {
+  position: fixed;
+  /* Force our fixed width — .slds-popover_tooltip sets width:auto, which would
+     otherwise make the box narrower than the 260px our JS positions against. */
+  width: 260px !important;
+  max-width: 260px !important;
+  min-width: 260px !important;
+  margin: 0 !important; /* .slds-popover adds margin-block-end; drop it */
+  z-index: 100000;
+  white-space: normal;
+  text-align: left;
+  font-weight: 400;
+  line-height: 1.4;
+  cursor: default;
+  /* Inverse (dark) background, matching SLDS tooltip. */
+  --fp-tt-bg: var(--slds-c-tooltip-color-background, var(--slds-g-color-surface-inverse-1, #032d60));
+  overflow: visible;
+}
+.fp-help-popover .slds-popover__body {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+/* Custom arrow — a real span whose `left` is set inline (React 15 drops CSS
+   custom properties, so a --var wouldn't work). Points right at the icon. */
+.fp-help-arrow {
+  position: absolute;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+}
+/* Tooltip is above the icon → arrow points down from the tooltip's bottom. */
+.fp-help-popover.fp-arrow-below .fp-help-arrow {
+  top: 100%;
+  border-top: 8px solid var(--fp-tt-bg);
+}
+/* Tooltip is below the icon → arrow points up from the tooltip's top. */
+.fp-help-popover.fp-arrow-above .fp-help-arrow {
+  bottom: 100%;
+  border-bottom: 8px solid var(--fp-tt-bg);
+}
+
+.field-with-button {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.field-combobox-wrapper {
+  flex: 1;
+  min-width: 0;
+}
+
+.field-combobox {
+  width: 100%;
+}
+
+.setup-button {
+  margin-bottom: 2px;
+  flex-shrink: 0;
+  --slds-c-icon-color-foreground: var(--primary-color);
+}
+
+.setup-button:hover:not([disabled]) {
+  --slds-c-icon-color-foreground: var(--primary-hover);
+}
+
+.setup-button[disabled] {
+  --slds-c-icon-color-foreground: var(--disabled-color);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ========================================
+   Tooltip
+   ======================================== */
+.formula-tooltip {
+  position: fixed;
+  background: rgba(102, 51, 153, 0.95);
+  backdrop-filter: blur(8px);
+  color: white;
+  padding: 6px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-family: 'Courier New', Consolas, Monaco, monospace;
+  font-weight: 600;
+  z-index: 10000;
+  pointer-events: none;
+  white-space: nowrap;
+  /* Anchor the tooltip's bottom-center at (x, y) so it floats above the token,
+     exactly like the app (x = token center, y = token top - 5). */
+  transform: translate(-50%, -100%);
+  margin-top: -8px;
+  box-shadow: 0 2px 8px rgba(102, 51, 153, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.5), 0 0 20px rgba(255, 255, 255, 0.3);
+}
+
+/* A FUNCTION token whose sub-expression can be evaluated on hover. */
+.fp-evaluable {
+  cursor: pointer;
+}
+.fp-evaluable:hover {
+  text-decoration: underline dotted;
+}
+
+/* Sparkle shown in the tooltip while the sub-expression is being evaluated. */
+.tooltip-sparkle {
+  display: inline-block;
+  animation: sparkle 0.8s ease-in-out infinite;
+}
+
+.formula-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: rgba(102, 51, 153, 0.95);
+}
+
+.tooltip-sparkle-container {
+  position: relative;
+  width: 35px;
+  height: 16px;
+  display: inline-block;
+}
+
+.glitter-sparkle {
+  position: absolute;
+  color: #ffffff;
+  text-shadow:
+    0 0 4px #fff,
+    0 0 8px #fff,
+    0 0 12px #e0e0e0,
+    0 0 16px rgba(255, 255, 255, 0.5);
+}
+
+.glitter-sparkle:nth-child(1) {
+  font-size: 10px;
+  top: 2px;
+  left: 8px;
+  animation: magicSparkle1 1.8s ease-in-out infinite;
+}
+
+.glitter-sparkle:nth-child(2) {
+  font-size: 6px;
+  top: 8px;
+  left: 3px;
+  animation: magicSparkle2 2s ease-in-out infinite;
+}
+
+.glitter-sparkle:nth-child(3) {
+  font-size: 8px;
+  top: 1px;
+  left: 18px;
+  animation: magicSparkle1 1.7s ease-in-out 0.3s infinite;
+}
+
+.glitter-sparkle:nth-child(4) {
+  font-size: 7px;
+  top: 9px;
+  left: 14px;
+  animation: magicSparkle2 1.9s ease-in-out 0.5s infinite;
+}
+
+.glitter-sparkle:nth-child(5) {
+  font-size: 9px;
+  top: 4px;
+  left: 26px;
+  animation: magicSparkle1 2.1s ease-in-out 0.8s infinite;
+}
+
+.glitter-sparkle:nth-child(6) {
+  font-size: 6px;
+  top: 10px;
+  left: 22px;
+  animation: magicSparkle2 1.8s ease-in-out 1s infinite;
+}
+
+.glitter-sparkle:nth-child(7) {
+  font-size: 7px;
+  top: 5px;
+  left: 12px;
+  animation: magicSparkle1 2s ease-in-out 0.6s infinite;
+}
+
+.glitter-sparkle:nth-child(8) {
+  font-size: 5px;
+  top: 3px;
+  left: 20px;
+  animation: magicSparkle2 1.9s ease-in-out 0.9s infinite;
+}
+
+/* ========================================
+   No Access View
+   ======================================== */
+.no-access-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 40px;
+  text-align: center;
+  min-height: 400px;
+}
+
+.no-access-image {
+  width: 200px;
+  height: 200px;
+  margin-bottom: 24px;
+  opacity: 0.7;
+}
+
+.no-access-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #3e3e3c;
+  margin-bottom: 12px;
+}
+
+.no-access-message {
+  font-size: 14px;
+  color: #706e6b;
+  max-width: 500px;
+  line-height: 1.5;
+}
+
+@keyframes magicSparkle1 {
+  0%, 100% {
+    transform: scale(0);
+    opacity: 0;
+    filter: brightness(1);
+  }
+  3% {
+    transform: scale(2);
+    opacity: 1;
+    filter: brightness(2);
+  }
+  8% {
+    transform: scale(1.4);
+    opacity: 1;
+    filter: brightness(1.5);
+  }
+  12% {
+    transform: scale(1.6);
+    opacity: 1;
+    filter: brightness(2);
+  }
+  18% {
+    transform: scale(1.3);
+    opacity: 0.8;
+    filter: brightness(1.2);
+  }
+  25% {
+    transform: scale(0);
+    opacity: 0;
+    filter: brightness(1);
+  }
+}
+
+@keyframes magicSparkle2 {
+  0%, 100% {
+    transform: scale(0);
+    opacity: 0;
+    filter: brightness(1);
+  }
+  5% {
+    transform: scale(1.8);
+    opacity: 1;
+    filter: brightness(2.5);
+  }
+  15% {
+    transform: scale(1.5);
+    opacity: 1;
+    filter: brightness(1.8);
+  }
+  22% {
+    transform: scale(0);
+    opacity: 0;
+    filter: brightness(1);
+  }
+}
+
+/* ========================================
+   Cursors
+   ======================================== */
+.token-field,
+.token-function {
+  cursor: help;
+}
+
+.collapse-hover {
+  cursor: pointer;
+}
+
+/* ========================================
+   Loading Animation
+   ======================================== */
+.sparkle-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 2rem;
+}
+
+.sparkle-container {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  cursor: default;
+}
+
+.sparkle {
+  position: absolute;
+  font-size: 24px;
+  filter: brightness(0) saturate(100%) invert(22%) sepia(47%) saturate(2471%) hue-rotate(256deg) brightness(91%) contrast(94%);
+  animation: sparkle 1.5s ease-in-out infinite;
+}
+
+.sparkle:nth-child(1) {
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  animation-delay: 0s;
+}
+
+.sparkle:nth-child(2) {
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  animation-delay: 0.3s;
+}
+
+.sparkle:nth-child(3) {
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  animation-delay: 0.6s;
+}
+
+.sparkle:nth-child(4) {
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  animation-delay: 0.9s;
+}
+
+@keyframes sparkle {
+  0%, 100% {
+    opacity: 0.3;
+    transform: translate(-50%, -50%) scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.2);
+  }
+}
+
+.loading-text {
+  margin-top: 1rem;
+  font-size: 14px;
+  color: #5d4d65;
+  text-align: center;
+}
+
+/* ========================================
+   Large Textarea
+   ======================================== */
+.large-textarea {
+  --slds-c-textarea-sizing-min-height: 200px;
+  min-height: 200px;
+}

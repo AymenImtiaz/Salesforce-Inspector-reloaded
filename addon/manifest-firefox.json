@@ -58,6 +58,7 @@
         "inspect-inline.css"
       ],
       "js": [
+        "formula-prettifier-launcher.js",
         "button.js",
         "inspect-inline.js"
       ]
@@ -83,7 +84,9 @@
     "field-creator.html",
     "options.html",
     "event-monitor.html",
-    "flow-scanner.html"
+    "flow-scanner.html",
+    "formula-prettifier.html",
+    "formula-prettifier-launcher.css"
   ],
   "incognito": "spanning",
   "manifest_version": 2
