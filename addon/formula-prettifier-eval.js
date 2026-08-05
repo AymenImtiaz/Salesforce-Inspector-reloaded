@@ -14,15 +14,16 @@
  *
  * WHY the split — and why substitution happens in JS rather than letting Apex
  * do everything: Salesforce's Formula.builder() cannot resolve certain things
- * against a record (global variables like $User/$Organization; and value shapes
- * such as Date/Time/DateTime, which must be expressed as DATEVALUE("…") etc.).
- * So the client converts what Formula.builder() can't handle into literal
- * formula syntax it CAN handle, and deliberately LEAVES picklist / multipicklist
- * / reference fields as bare references so Apex evaluates them against the real
- * queried record. Collapsing this into one Apex call would reintroduce exactly
- * the failures the app already solved. The split also makes on-hover
- * sub-expression evaluation cheap: phase 1 runs once, then every hovered
- * sub-expression reuses the cached values and only re-runs phase 2.
+ * against a record (global variables like $User/$Organization/$Setup/
+ * $CustomMetadata; and value shapes such as Date/Time/DateTime, which must be
+ * expressed as DATEVALUE("…") etc.). So the client converts what
+ * Formula.builder() can't handle into literal formula syntax it CAN handle, and
+ * deliberately LEAVES picklist / multipicklist / reference fields as bare
+ * references so Apex evaluates them against the real queried record. Collapsing
+ * this into one Apex call would reintroduce exactly the failures the app
+ * already solved. The split also makes on-hover sub-expression evaluation
+ * cheap: phase 1 runs once, then every hovered sub-expression reuses the
+ * cached values and only re-runs phase 2.
  *
  * In the browser there is no packaged Apex, so each phase runs as ANONYMOUS
  * Apex via the Tooling API's executeAnonymous. The anonymous block contains the
@@ -61,6 +62,10 @@ function detectNonReplaceableFields(fieldTypes) {
   const nonReplaceable = new Set();
   const types = fieldTypes || {};
   for (const fieldName of Object.keys(types)) {
+    // Global variables ($User, $Setup, $CustomMetadata, …) must always be
+    // substituted — Formula.builder() can't resolve them without
+    // withGlobalVariables, which this pipeline does not use.
+    if (/^\$/.test(fieldName)) continue;
     const t = types[fieldName];
     if (t && NON_REPLACEABLE_TYPES.includes(t.toUpperCase())) {
       nonReplaceable.add(fieldName);
@@ -208,6 +213,8 @@ class FpFetcher {
   final String GLOBAL_PROFILE = '$Profile';
   final String GLOBAL_ORGANIZATION = '$Organization';
   final String GLOBAL_USERROLE = '$UserRole';
+  final String GLOBAL_CUSTOMMETADATA = '$CustomMetadata';
+  final String GLOBAL_SETUP = '$Setup';
   final Set<String> FORMULA_FUNCTIONS = new Set<String>{
     'ACOS','ADDMONTHS','AND','ASCII','ASIN','ATAN','ATAN2','BEGINS','BLANKVALUE',
     'BR','CASE','CASESAFEID','CEILING','CHR','CONTAINS','COS','CURRENCYRATE',
@@ -235,10 +242,11 @@ class FpFetcher {
   Map<String,Object> fetchFieldValues(String objectApiName, Id recordId, Set<String> fieldReferences, Map<String,String> fieldTypes, Schema.SObjectType objType) {
     Map<String,Object> values = new Map<String,Object>();
     if (fieldReferences.isEmpty() || recordId == null || objType == null) return values;
-    Schema.DescribeSObjectResult objDescribe = objType.getDescribe();
-    if (!objDescribe.isAccessible()) return values;
     Map<String,Set<String>> categorizedFields = categorizeFieldReferences(fieldReferences);
-    if (!categorizedFields.get('main').isEmpty()) {
+    // Record fields need object access; globals ($User, $Setup, $CustomMetadata, …)
+    // are independent and must still resolve when the record object is locked down.
+    Schema.DescribeSObjectResult objDescribe = objType.getDescribe();
+    if (objDescribe.isAccessible() && !categorizedFields.get('main').isEmpty()) {
       fetchMainObjectFields(values, fieldTypes, objectApiName, recordId, categorizedFields.get('main'), objType, objDescribe);
     }
     Set<String> globalKeys = new Set<String>{ GLOBAL_USER, GLOBAL_PROFILE, GLOBAL_ORGANIZATION, GLOBAL_USERROLE };
@@ -246,6 +254,12 @@ class FpFetcher {
       if (categorizedFields.containsKey(globalKey) && !categorizedFields.get(globalKey).isEmpty()) {
         fetchGlobalVariableFields(values, globalKey, categorizedFields.get(globalKey));
       }
+    }
+    if (categorizedFields.containsKey(GLOBAL_CUSTOMMETADATA) && !categorizedFields.get(GLOBAL_CUSTOMMETADATA).isEmpty()) {
+      fetchCustomMetadataFields(values, fieldTypes, categorizedFields.get(GLOBAL_CUSTOMMETADATA));
+    }
+    if (categorizedFields.containsKey(GLOBAL_SETUP) && !categorizedFields.get(GLOBAL_SETUP).isEmpty()) {
+      fetchSetupFields(values, fieldTypes, categorizedFields.get(GLOBAL_SETUP));
     }
     return values;
   }
@@ -305,7 +319,8 @@ class FpFetcher {
   Map<String,Set<String>> categorizeFieldReferences(Set<String> fieldReferences) {
     Map<String,Set<String>> categorized = new Map<String,Set<String>>{
       'main' => new Set<String>(), GLOBAL_USER => new Set<String>(), GLOBAL_PROFILE => new Set<String>(),
-      GLOBAL_ORGANIZATION => new Set<String>(), GLOBAL_USERROLE => new Set<String>() };
+      GLOBAL_ORGANIZATION => new Set<String>(), GLOBAL_USERROLE => new Set<String>(),
+      GLOBAL_CUSTOMMETADATA => new Set<String>(), GLOBAL_SETUP => new Set<String>() };
     for (String fieldRef : fieldReferences) {
       String globalPrefix = getGlobalPrefix(fieldRef);
       if (globalPrefix != null) categorized.get(globalPrefix).add(fieldRef);
@@ -315,10 +330,13 @@ class FpFetcher {
   }
 
   String getGlobalPrefix(String fieldRef) {
+    // $UserRole must be checked before $User ($User is a prefix of $UserRole).
+    if (fieldRef.startsWith(GLOBAL_USERROLE + FIELD_SEPARATOR)) return GLOBAL_USERROLE;
     if (fieldRef.startsWith(GLOBAL_USER + FIELD_SEPARATOR)) return GLOBAL_USER;
     if (fieldRef.startsWith(GLOBAL_PROFILE + FIELD_SEPARATOR)) return GLOBAL_PROFILE;
     if (fieldRef.startsWith(GLOBAL_ORGANIZATION + FIELD_SEPARATOR)) return GLOBAL_ORGANIZATION;
-    if (fieldRef.startsWith(GLOBAL_USERROLE + FIELD_SEPARATOR)) return GLOBAL_USERROLE;
+    if (fieldRef.startsWith(GLOBAL_CUSTOMMETADATA + FIELD_SEPARATOR)) return GLOBAL_CUSTOMMETADATA;
+    if (fieldRef.startsWith(GLOBAL_SETUP + FIELD_SEPARATOR)) return GLOBAL_SETUP;
     return null;
   }
 
@@ -439,6 +457,71 @@ class FpFetcher {
       List<UserRole> roles = Database.query(query);
       if (!roles.isEmpty()) populateFieldValues(values, roles[0], fields, accessibleFields, GLOBAL_USERROLE);
     } catch (Exception e) { /* skip */ }
+  }
+
+  // $CustomMetadata.Type__mdt.RecordDeveloperName.Field__c
+  void fetchCustomMetadataFields(Map<String,Object> values, Map<String,String> fieldTypes, Set<String> fields) {
+    for (String fieldRef : fields) {
+      try {
+        String path = fieldRef.substring(GLOBAL_CUSTOMMETADATA.length() + 1);
+        List<String> parts = path.split('\\\\.');
+        if (parts.size() < 3) continue;
+        String typeName = parts[0];
+        if (!typeName.endsWithIgnoreCase('__mdt')) typeName += '__mdt';
+        String recordName = parts[1];
+        List<String> fieldParts = new List<String>();
+        for (Integer i = 2; i < parts.size(); i++) fieldParts.add(parts[i]);
+        String fieldPath = String.join(fieldParts, '.');
+        Schema.SObjectType mdtType = Schema.getGlobalDescribe().get(typeName);
+        if (mdtType == null) continue;
+        Schema.DescribeSObjectResult mdtDescribe = mdtType.getDescribe();
+        if (!mdtDescribe.isAccessible()) continue;
+        String leafField = fieldParts[fieldParts.size() - 1];
+        Schema.SObjectField sField = mdtDescribe.fields.getMap().get(leafField);
+        if (sField == null || !sField.getDescribe().isAccessible()) continue;
+        fieldTypes.put(fieldRef, String.valueOf(sField.getDescribe().getType()));
+        String soql = 'SELECT ' + fieldPath + ' FROM ' + typeName
+          + ' WHERE DeveloperName = \\'' + String.escapeSingleQuotes(recordName) + '\\' LIMIT 1';
+        List<SObject> rows = Database.query(soql);
+        if (rows.isEmpty()) { values.put(fieldRef, null); continue; }
+        values.put(fieldRef, getFieldValue(rows[0], fieldPath));
+      } catch (Exception e) { /* skip unresolved CMDT ref */ }
+    }
+  }
+
+  // $Setup.HierarchySetting__c.Field__c — resolve User > Profile > Org like getInstance().
+  void fetchSetupFields(Map<String,Object> values, Map<String,String> fieldTypes, Set<String> fields) {
+    for (String fieldRef : fields) {
+      try {
+        String path = fieldRef.substring(GLOBAL_SETUP.length() + 1);
+        List<String> parts = path.split('\\\\.');
+        if (parts.size() < 2) continue;
+        String settingName = parts[0];
+        List<String> fieldParts = new List<String>();
+        for (Integer i = 1; i < parts.size(); i++) fieldParts.add(parts[i]);
+        String fieldPath = String.join(fieldParts, '.');
+        Schema.SObjectType csType = Schema.getGlobalDescribe().get(settingName);
+        if (csType == null) continue;
+        Schema.DescribeSObjectResult csDescribe = csType.getDescribe();
+        if (!csDescribe.isCustomSetting() || !csDescribe.isAccessible()) continue;
+        String leafField = fieldParts[fieldParts.size() - 1];
+        Schema.SObjectField sField = csDescribe.fields.getMap().get(leafField);
+        if (sField == null || !sField.getDescribe().isAccessible()) continue;
+        fieldTypes.put(fieldRef, String.valueOf(sField.getDescribe().getType()));
+        Id userId = UserInfo.getUserId();
+        Id profileId = UserInfo.getProfileId();
+        Id orgId = UserInfo.getOrganizationId();
+        String soql = 'SELECT SetupOwnerId, ' + fieldPath + ' FROM ' + settingName
+          + ' WHERE SetupOwnerId IN (\\'' + userId + '\\',\\'' + profileId + '\\',\\'' + orgId + '\\')';
+        Map<Id,SObject> byOwner = new Map<Id,SObject>();
+        for (SObject row : Database.query(soql)) {
+          byOwner.put((Id)row.get('SetupOwnerId'), row);
+        }
+        SObject resolved = byOwner.containsKey(userId) ? byOwner.get(userId)
+          : (byOwner.containsKey(profileId) ? byOwner.get(profileId) : byOwner.get(orgId));
+        values.put(fieldRef, resolved != null ? getFieldValue(resolved, fieldPath) : null);
+      } catch (Exception e) { /* skip unresolved $Setup ref */ }
+    }
   }
 
   String convertToSoqlPath(String fieldPath) {
