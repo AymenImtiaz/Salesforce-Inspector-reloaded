@@ -157,35 +157,112 @@ export function replaceFieldsWithValues(expression, fieldValues, fieldTypes) {
 }
 
 // ===========================================================================
-// Client-side result parsing — hyperlink markers, ported from the LWC
-// (isResultHyperlink / hyperlinkData). Formula.evaluate() returns HYPERLINK /
-// IMAGE results in a "_HL_ENCODED_<url>_HL_<label>" form that passes through the
-// Apex formatResult untouched; we parse it for display.
+// Client-side result parsing — HYPERLINK / IMAGE markers.
+// Formula.evaluate() returns these as Salesforce's internal encoded form:
+//   HYPERLINK → _HL_ENCODED_<url>_HL_<label>_HL_<target>_HL_
+//   IMAGE     → _IM1_<src>_IM2_<alt>_IM3_[<height>_IM4_<width>]
+// where <label> may itself be an IMAGE encoding. We convert that into the HTML
+// Salesforce would render on a record page, so tooltips / the Result badge show
+// usable markup instead of the raw tokens.
 // ===========================================================================
 
 export function isResultHyperlink(result) {
   return !!result && typeof result === "string" && result.indexOf("_HL_ENCODED_") !== -1;
 }
 
+export function isResultImage(result) {
+  return !!result && typeof result === "string" && result.indexOf("_IM1_") !== -1;
+}
+
+function decodeMaybeUri(value) {
+  if (!value) return value;
+  try {
+    return decodeURIComponent(value.replace(/\+/g, " "));
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * Convert an IMAGE encoding (_IM1_…_IM2_…_IM3_…) into an <img> tag.
+ * Returns null if the string does not contain a recognizable IMAGE encoding.
+ */
+export function imageEncodingToHtml(encoded) {
+  if (!encoded || typeof encoded !== "string") return null;
+  const im1 = encoded.indexOf("_IM1_");
+  if (im1 === -1) return null;
+  const afterIm1 = encoded.substring(im1 + "_IM1_".length);
+  const im2 = afterIm1.indexOf("_IM2_");
+  if (im2 === -1) return null;
+  const src = decodeMaybeUri(afterIm1.substring(0, im2));
+  const afterIm2 = afterIm1.substring(im2 + "_IM2_".length);
+  const im3 = afterIm2.indexOf("_IM3_");
+  if (im3 === -1) return null;
+  const alt = decodeMaybeUri(afterIm2.substring(0, im3));
+  let rest = afterIm2.substring(im3 + "_IM3_".length);
+  // Optional height / width: _IM3_<height>_IM4_<width> (may be empty).
+  let height = "";
+  let width = "";
+  if (rest) {
+    // Stop at the next HYPERLINK delimiter if IMAGE is nested inside one.
+    const hlCut = rest.indexOf("_HL_");
+    if (hlCut !== -1) rest = rest.substring(0, hlCut);
+    const im4 = rest.indexOf("_IM4_");
+    if (im4 !== -1) {
+      height = rest.substring(0, im4).trim();
+      width = rest.substring(im4 + "_IM4_".length).replace(/_+$/, "").trim();
+    } else {
+      const bare = rest.replace(/_+$/, "").trim();
+      if (bare) height = bare;
+    }
+  }
+  let html = '<img src="' + src + '" alt="' + alt + '" border="0"';
+  if (height) html += ' height="' + height + '"';
+  if (width) html += ' width="' + width + '"';
+  html += "/>";
+  return html;
+}
+
+/**
+ * Parse a HYPERLINK encoding into {url, label, target}. Label may still contain
+ * an IMAGE encoding (caller can run imageEncodingToHtml on it).
+ */
 export function parseHyperlink(result) {
   if (!isResultHyperlink(result)) return null;
   const encodedIndex = result.indexOf("_HL_ENCODED_");
   const afterEncoded = result.substring(encodedIndex + "_HL_ENCODED_".length);
-  const nextDelimiter = afterEncoded.indexOf("_HL_");
-  let url, label;
-  if (nextDelimiter === -1) {
-    url = afterEncoded.trim();
-    label = url;
-  } else {
-    url = afterEncoded.substring(0, nextDelimiter).trim();
-    const labelSection = afterEncoded.substring(nextDelimiter + "_HL_".length);
-    const labelParts = labelSection.split("_HL_").filter(p => {
-      const t = p.trim();
-      return t !== "" && t !== "blank" && t !== "_blank";
-    });
-    label = labelParts.join(" ").trim() || url;
+  const parts = afterEncoded.split("_HL_");
+  // parts: [url, label, target, ...trailing empties]
+  const url = decodeMaybeUri((parts[0] || "").trim());
+  const label = parts.length > 1 ? parts[1] : "";
+  let target = parts.length > 2 ? (parts[2] || "").trim() : "";
+  // Salesforce stores "_self" / "_blank"; a bare "blank" also appears.
+  if (target === "blank") target = "_blank";
+  if (!target) target = "_blank";
+  if (!url) return null;
+  return {url, label, target};
+}
+
+/**
+ * Turn a Formula.evaluate() string result into display HTML for HYPERLINK /
+ * IMAGE (nested or alone). Non-encoded results are returned unchanged.
+ */
+export function formatEncodedFormulaResult(result) {
+  if (result == null || typeof result !== "string") return result;
+  if (isResultHyperlink(result)) {
+    const parsed = parseHyperlink(result);
+    if (!parsed) return result;
+    let inner = parsed.label;
+    if (inner && inner.indexOf("_IM1_") !== -1) {
+      inner = imageEncodingToHtml(inner) || inner;
+    }
+    // Match Salesforce's rendered markup (target included even when _self).
+    return '<a href="' + parsed.url + '" target="' + parsed.target + '">' + (inner || "") + "</a>";
   }
-  return url.length > 0 ? {url, label} : null;
+  if (isResultImage(result)) {
+    return imageEncodingToHtml(result) || result;
+  }
+  return result;
 }
 
 // ===========================================================================
