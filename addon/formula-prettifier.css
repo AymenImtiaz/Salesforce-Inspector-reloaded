@@ -260,6 +260,12 @@ body.fp-embedded {
   overflow-wrap: anywhere;
 }
 
+.result-value-markup {
+  max-width: 100%;
+  display: inline-block;
+  vertical-align: top;
+}
+
 .result-hyperlink {
   color: var(--primary-color);
   font-weight: 600;
@@ -964,14 +970,40 @@ lightning-combobox {
   font-weight: 600;
   z-index: 10000;
   pointer-events: none;
-  white-space: nowrap;
-  /* Anchor the tooltip's bottom-center at (x, y) so it floats above the token,
-     exactly like the app (x = token center, y = token top - 5). */
-  transform: translate(-50%, -100%);
-  margin-top: -8px;
+  /* Long HYPERLINK/IMAGE HTML must wrap and stay inside the iframe. */
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  box-sizing: border-box;
   box-shadow: 0 2px 8px rgba(102, 51, 153, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.2);
   text-shadow: 0 0 10px rgba(255, 255, 255, 0.5), 0 0 20px rgba(255, 255, 255, 0.3);
+}
+.formula-tooltip-above {
+  transform: translateY(-100%);
+  margin-top: -8px;
+}
+.formula-tooltip-below {
+  transform: none;
+  margin-top: 8px;
+}
+
+/* Arrow points at the hovered token (left is set inline after clamping). */
+.formula-tooltip-arrow {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border: 5px solid transparent;
+}
+.formula-tooltip-above .formula-tooltip-arrow {
+  top: 100%;
+  transform: translateX(-50%);
+  border-top-color: rgba(102, 51, 153, 0.95);
+}
+.formula-tooltip-below .formula-tooltip-arrow {
+  bottom: 100%;
+  transform: translateX(-50%);
+  border-bottom-color: rgba(102, 51, 153, 0.95);
 }
 
 /* A FUNCTION token whose sub-expression can be evaluated on hover. */
@@ -986,16 +1018,6 @@ lightning-combobox {
 .tooltip-sparkle {
   display: inline-block;
   animation: sparkle 0.8s ease-in-out infinite;
-}
-
-.formula-tooltip::after {
-  content: '';
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 5px solid transparent;
-  border-top-color: rgba(102, 51, 153, 0.95);
 }
 
 .tooltip-sparkle-container {

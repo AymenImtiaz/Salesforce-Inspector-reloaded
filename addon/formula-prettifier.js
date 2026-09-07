@@ -16,7 +16,7 @@ import {sfConn} from "./inspector.js";
 import {getFieldSetupLinks} from "./setup-links.js";
 import {prettify, FORMULA_FUNCTIONS, extractFunctionExpression} from "./formula-prettifier-core.js";
 import {getObjectList, getFormulaFieldsForObject, getFieldFormula} from "./formula-prettifier-data.js";
-import {fetchFieldData, evaluateExpression, replaceFieldsWithValues, isResultHyperlink, parseHyperlink, canRunApex, UNABLE_TO_EVALUATE} from "./formula-prettifier-eval.js";
+import {fetchFieldData, evaluateExpression, replaceFieldsWithValues, formatEncodedFormulaResult, canRunApex, UNABLE_TO_EVALUATE} from "./formula-prettifier-eval.js";
 
 let h = React.createElement;
 
@@ -211,11 +211,10 @@ class Model {
     // result to display.
     return this.showOutputSection && this.formulaResult !== "";
   }
-  get isResultHyperlink() {
-    return isResultHyperlink(this.formulaResult);
-  }
-  get hyperlinkData() {
-    return parseHyperlink(this.formulaResult);
+  // Display form of the evaluated result — HYPERLINK / IMAGE encodings become
+  // the HTML Salesforce would render; everything else is unchanged.
+  get displayFormulaResult() {
+    return formatEncodedFormulaResult(this.formulaResult);
   }
   get resultHelpText() {
     return this.formulaResult === UNABLE_TO_EVALUATE ? HELP_RESULT_FAIL : HELP_RESULT_OK;
@@ -391,17 +390,7 @@ class Model {
     const fieldValue = this.fieldValues[fieldText];
     if (fieldValue === undefined) return;
     const displayValue = fieldValue === null ? "null" : String(fieldValue);
-    // Position exactly like the app: token horizontal center, just above it.
-    // The CSS transform translate(-50%,-100%) anchors the tooltip there.
-    const rect = event.target.getBoundingClientRect();
-    this.tooltip = {
-      content: displayValue,
-      x: rect.left + (rect.width / 2),
-      y: rect.top - 5,
-      evaluating: false,
-      tokenId: "field-" + fieldText
-    };
-    this.didUpdate();
+    this.showTooltip(event.target, displayValue, "field-" + fieldText);
   }
 
   // Entry point from a hovered FUNCTION token: extract its balanced sub-
@@ -412,21 +401,17 @@ class Model {
     const subExpression = extractFunctionExpression(this.formattedLines, lineIndex, functionName);
     if (!subExpression) return;
     const tokenId = lineIndex + "-function-" + functionName;
-    // Position exactly like the app: token horizontal center, just above it.
-    const rect = event.target.getBoundingClientRect();
-    const x = rect.left + (rect.width / 2);
-    const y = rect.top - 5;
-    this.evaluateSubExpression(subExpression, tokenId, x, y);
+    const anchor = event.target;
+    this.evaluateSubExpression(subExpression, tokenId, anchor);
   }
 
   // On-hover sub-expression evaluation. Reuses the already-fetched field
   // values/types (no phase-1 re-query) — substitute the sub-expression and
   // evaluate. `fieldDataType` is intentionally omitted (no Percent scaling on
   // hover), matching the app.
-  async evaluateSubExpression(subExpression, tokenId, x, y) {
+  async evaluateSubExpression(subExpression, tokenId, anchor) {
     if (!this.canEvaluateFormula || !this.fieldValues) return;
-    this.tooltip = {content: "", x, y, evaluating: true, tokenId};
-    this.didUpdate();
+    this.showTooltip(anchor, "", tokenId, true);
     try {
       const expression = replaceFieldsWithValues(subExpression, this.fieldValues, this.fieldTypes);
       const result = await evaluateExpression({
@@ -438,15 +423,31 @@ class Model {
       });
       // Only apply if still hovering the same token.
       if (this.tooltip && this.tooltip.tokenId === tokenId) {
-        this.tooltip = {content: result, x, y, evaluating: false, tokenId};
-        this.didUpdate();
+        this.showTooltip(anchor, formatEncodedFormulaResult(result), tokenId, false);
       }
     } catch {
       if (this.tooltip && this.tooltip.tokenId === tokenId) {
-        this.tooltip = {content: UNABLE_TO_EVALUATE, x, y, evaluating: false, tokenId};
-        this.didUpdate();
+        this.showTooltip(anchor, UNABLE_TO_EVALUATE, tokenId, false);
       }
     }
+  }
+
+  // Position the formula tooltip above `anchor`. Final left/arrow are refined
+  // by FormulaTooltip after it measures its real width so short and long
+  // content both stay centered on the token without clipping the iframe.
+  showTooltip(anchor, content, tokenId, evaluating) {
+    const rect = anchor.getBoundingClientRect();
+    const placeAbove = rect.top >= 48;
+    this.tooltip = {
+      content,
+      anchorX: rect.left + (rect.width / 2),
+      anchorTop: rect.top,
+      anchorBottom: rect.bottom,
+      placeAbove,
+      evaluating: !!evaluating,
+      tokenId
+    };
+    this.didUpdate();
   }
 
   hideTooltip() {
@@ -990,6 +991,70 @@ function parseInlineStyle(styleString) {
   return style;
 }
 
+// Hover-result tooltip. Renders at the token, then remeasures and clamps so
+// long HYPERLINK/IMAGE HTML never clips out of the iframe.
+class FormulaTooltip extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = {left: null, arrowLeft: 12, maxWidth: 480};
+  }
+  componentDidMount() {
+    this.reposition();
+  }
+  componentDidUpdate(prevProps) {
+    if (prevProps.tooltip !== this.props.tooltip) {
+      this.reposition();
+    }
+  }
+  reposition() {
+    const el = this.refs.tip;
+    const tip = this.props.tooltip;
+    if (!el || !tip) return;
+    const vw = window.innerWidth;
+    const margin = 8;
+    const maxWidth = Math.min(480, vw - 2 * margin);
+    // Force max-width before measuring so wrapping is accounted for.
+    el.style.maxWidth = maxWidth + "px";
+    const width = Math.min(maxWidth, el.offsetWidth || maxWidth);
+    let left = tip.anchorX - (width / 2);
+    left = Math.max(margin, Math.min(left, vw - width - margin));
+    const arrowLeft = Math.max(12, Math.min(tip.anchorX - left, width - 12));
+    this.setState({left, arrowLeft, maxWidth});
+  }
+  render() {
+    const tip = this.props.tooltip;
+    const left = this.state.left != null ? this.state.left : Math.max(8, tip.anchorX - 40);
+    const top = tip.placeAbove ? (tip.anchorTop - 5) : (tip.anchorBottom + 5);
+    return h("div", {
+      className: "formula-tooltip" + (tip.placeAbove ? " formula-tooltip-above" : " formula-tooltip-below"),
+      ref: "tip",
+      style: {
+        position: "fixed",
+        left: left + "px",
+        top: top + "px",
+        maxWidth: this.state.maxWidth + "px"
+      }
+    },
+    tip.evaluating
+      ? h("div", {className: "tooltip-sparkle-container"},
+        h("span", {className: "glitter-sparkle"}, "✦"),
+        h("span", {className: "glitter-sparkle"}, "✧"),
+        h("span", {className: "glitter-sparkle"}, "✦"),
+        h("span", {className: "glitter-sparkle"}, "✧"),
+        h("span", {className: "glitter-sparkle"}, "✦"),
+        h("span", {className: "glitter-sparkle"}, "✧"),
+        h("span", {className: "glitter-sparkle"}, "✦"),
+        h("span", {className: "glitter-sparkle"}, "✧")
+      )
+      : tip.content,
+    h("span", {
+      className: "formula-tooltip-arrow",
+      style: {left: this.state.arrowLeft + "px"}
+    })
+    );
+  }
+}
+
 class OutputSection extends React.Component {
   constructor(props) {
     super(props);
@@ -1010,17 +1075,17 @@ class OutputSection extends React.Component {
         h("div", {className: "slds-text-heading_small", style: {paddingRight: "10px"}}, "Prettified Formula:"),
         h("div", {className: "header-actions"},
           // Result badge (only when this record/formula is evaluable).
+          // HYPERLINK / IMAGE encodings are shown as the HTML Salesforce renders.
           model.showResultBadge
             ? h("div", {className: "formula-result-badge"},
-              model.isResultHyperlink && model.hyperlinkData
-                ? [
-                  h("span", {key: "l", className: "result-label"}, "Result:"),
-                  h("a", {key: "v", href: model.hyperlinkData.url, target: "_blank", className: "result-hyperlink"}, model.hyperlinkData.label)
-                ]
-                : [
-                  h("span", {key: "l", className: "result-label"}, "Result:"),
-                  h("span", {key: "v", className: "result-value"}, model.formulaResult)
-                ],
+              [
+                h("span", {key: "l", className: "result-label"}, "Result:"),
+                h("span", {
+                  key: "v",
+                  className: "result-value" + (model.displayFormulaResult !== model.formulaResult ? " result-value-markup" : ""),
+                  title: model.displayFormulaResult
+                }, model.displayFormulaResult)
+              ],
               h(HelpIcon, {key: "help", text: model.resultHelpText})
             )
             : null,
@@ -1046,23 +1111,7 @@ class OutputSection extends React.Component {
       // On-hover tooltip: a field's value, or a function sub-expression result
       // (with the app's glittering sparkle animation while evaluating).
       model.tooltip
-        ? h("div", {
-          className: "formula-tooltip",
-          style: {position: "fixed", left: model.tooltip.x + "px", top: model.tooltip.y + "px"}
-        },
-        model.tooltip.evaluating
-          ? h("div", {className: "tooltip-sparkle-container"},
-            h("span", {className: "glitter-sparkle"}, "✦"),
-            h("span", {className: "glitter-sparkle"}, "✧"),
-            h("span", {className: "glitter-sparkle"}, "✦"),
-            h("span", {className: "glitter-sparkle"}, "✧"),
-            h("span", {className: "glitter-sparkle"}, "✦"),
-            h("span", {className: "glitter-sparkle"}, "✧"),
-            h("span", {className: "glitter-sparkle"}, "✦"),
-            h("span", {className: "glitter-sparkle"}, "✧")
-          )
-          : model.tooltip.content
-        )
+        ? h(FormulaTooltip, {key: model.tooltip.tokenId + (model.tooltip.evaluating ? "-e" : ""), tooltip: model.tooltip})
         : null
     );
   }
