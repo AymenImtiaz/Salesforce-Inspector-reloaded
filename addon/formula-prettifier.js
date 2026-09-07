@@ -268,6 +268,68 @@ class Model {
     if (raw) this.startEvaluation(raw);
   }
 
+  // --- Collapse / expand (ported verbatim from the app) ---------------------
+  // Toggle a collapsible line's block: flip isCollapsed and hide/show the lines
+  // between it and its matching closing line.
+  toggleCollapse(lineId, collapseDepth) {
+    const lines = this.formattedLines;
+    const targetLine = lines[lineId];
+    if (!targetLine) return;
+
+    targetLine.isCollapsed = !targetLine.isCollapsed;
+    targetLine.collapsedDepth = collapseDepth;
+
+    const closingLineId = this.findClosingLine(lineId, collapseDepth);
+    if (closingLineId !== null) {
+      this.updateLineVisibility(lineId, closingLineId, targetLine.isCollapsed);
+      lines[closingLineId].isHidden = false;
+    }
+    this.didUpdate();
+  }
+
+  // Find the line where this collapsible block closes (matching bracket depth).
+  findClosingLine(lineId, collapseDepth) {
+    const lines = this.formattedLines;
+    let depthCounter = 1;
+    for (let i = lineId + 1; i < lines.length; i++) {
+      for (const token of lines[i].tokens) {
+        if (token.type === "bracket" && token.bracketDepth === collapseDepth) {
+          if (token.text === "(") {
+            depthCounter++;
+          } else if (token.text === ")") {
+            depthCounter--;
+            if (depthCounter === 0) return i;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  // Hide (collapsing) or show (expanding) the lines within a block. When
+  // expanding, a line stays hidden if it's still inside another collapsed block.
+  updateLineVisibility(startLine, endLine, isCollapsing) {
+    const lines = this.formattedLines;
+    for (let i = startLine + 1; i < endLine; i++) {
+      lines[i].isHidden = isCollapsing ? true : this.isLineInCollapsedBlock(i);
+    }
+  }
+
+  // True if the line falls inside any other still-collapsed block.
+  isLineInCollapsedBlock(lineId) {
+    const lines = this.formattedLines;
+    for (let j = 0; j < lineId; j++) {
+      const line = lines[j];
+      if (line.isCollapsed && line.collapsedDepth !== undefined) {
+        const closingLineId = this.findClosingLine(j, line.collapsedDepth);
+        if (closingLineId !== null && lineId > j && lineId < closingLineId) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   // --- Live evaluation ------------------------------------------------------
   // Full-formula evaluation, mirroring the app: fetch the formula's field
   // values/types once (phase 1), then substitute + evaluate (phase 2). The
@@ -836,9 +898,41 @@ class Typeahead extends React.Component {
   }
 }
 
-// One syntax-highlighted line of formula output (gutter + tokens). When the
-// current record/formula is evaluable, hovering a FUNCTION token evaluates that
-// sub-expression and shows the result in a tooltip (like the app).
+// Render a single token span, with hover behavior (function eval / field value /
+// bracket-pair highlight) wired when the formula is evaluable.
+function renderToken(token, lineIndex, model, canEval) {
+  const isEvaluableFn = canEval && token.type === "function";
+  const isHoverableField = canEval && token.type === "field" && model.hasFieldValue(token.text);
+  const isBracket = token.type === "bracket" && token.bracketPairId != null;
+  const hoverable = isEvaluableFn || isHoverableField;
+  const isHighlighted = isBracket && model.hoveredBracketPairId === token.bracketPairId;
+  return h("span", {
+    key: token.id,
+    className: token.cssClass + (hoverable ? " fp-evaluable" : "") + (isHighlighted ? " highlight-scope" : ""),
+    "data-bracket-depth": token.colorDepth != null ? token.colorDepth : undefined,
+    "data-bracket-pair-id": token.bracketPairId != null ? token.bracketPairId : undefined,
+    "data-token-text": token.text,
+    "data-token-type": token.type,
+    onMouseEnter: (hoverable || isBracket)
+      ? (e => {
+        if (isEvaluableFn) model.onFunctionHover(e, lineIndex, token.text);
+        else if (isHoverableField) model.onFieldHover(e, token.text);
+        if (isBracket) model.highlightBracketPair(token.bracketPairId);
+      })
+      : undefined,
+    onMouseLeave: (hoverable || isBracket)
+      ? (() => {
+        if (hoverable) model.hideTooltip();
+        if (isBracket) model.clearBracketHighlight();
+      })
+      : undefined
+  }, token.displayText);
+}
+
+// One syntax-highlighted line of formula output (gutter + tokens). Hovering a
+// FUNCTION token evaluates its sub-expression, a FIELD token shows its value,
+// and a BRACKET highlights its pair. Collapsible lines (IF/AND/OR/CASE) show a
+// ▶/▼ toggle that collapses the nested block, exactly like the app.
 function FormulaLine({line, lineIndex, model}) {
   const canEval = model && model.canEvaluateFormula;
   return h("div", {
@@ -850,7 +944,11 @@ function FormulaLine({line, lineIndex, model}) {
     h("span", {className: "line-number"}, line.lineNumber),
     h("span", {className: "gutter-arrow-space"},
       line.hasCollapseToggle
-        ? h("span", {className: "gutter-collapse-toggle"}, line.isCollapsed ? "▶" : "▼")
+        ? h("span", {
+          className: "gutter-collapse-toggle",
+          "data-is-collapsed": line.isCollapsed ? "true" : "false",
+          onClick: () => model.toggleCollapse(line.id, line.collapseDepth)
+        }, line.isCollapsed ? "▶" : "▼")
         : null
     )
   ),
@@ -859,37 +957,14 @@ function FormulaLine({line, lineIndex, model}) {
     style: parseInlineStyle(line.indentStyle),
     "data-indent": line.indentLevel
   },
-  ...line.tokens.map(token => {
-    // A FUNCTION token evaluates its sub-expression on hover; a FIELD token whose
-    // value we fetched shows that value on hover (no Apex call needed).
-    const isEvaluableFn = canEval && token.type === "function";
-    const isHoverableField = canEval && token.type === "field" && model.hasFieldValue(token.text);
-    const isBracket = token.type === "bracket" && token.bracketPairId != null;
-    const hoverable = isEvaluableFn || isHoverableField;
-    // Highlight this bracket when its partner (same pair id) is hovered.
-    const isHighlighted = isBracket && model.hoveredBracketPairId === token.bracketPairId;
-    return h("span", {
-      key: token.id,
-      className: token.cssClass + (hoverable ? " fp-evaluable" : "") + (isHighlighted ? " highlight-scope" : ""),
-      "data-bracket-depth": token.colorDepth != null ? token.colorDepth : undefined,
-      "data-bracket-pair-id": token.bracketPairId != null ? token.bracketPairId : undefined,
-      "data-token-text": token.text,
-      "data-token-type": token.type,
-      onMouseEnter: (hoverable || isBracket)
-        ? (e => {
-          if (isEvaluableFn) model.onFunctionHover(e, lineIndex, token.text);
-          else if (isHoverableField) model.onFieldHover(e, token.text);
-          if (isBracket) model.highlightBracketPair(token.bracketPairId);
-        })
-        : undefined,
-      onMouseLeave: (hoverable || isBracket)
-        ? (() => {
-          if (hoverable) model.hideTooltip();
-          if (isBracket) model.clearBracketHighlight();
-        })
-        : undefined
-    }, token.displayText);
-  })
+  // When collapsed, show only the tokens up to the first comma plus a "..."
+  // preview (like the app); otherwise show all tokens.
+  line.isCollapsed
+    ? [
+      ...line.tokens.filter(t => t.showWhenCollapsed).map(t => renderToken(t, lineIndex, model, canEval)),
+      h("span", {key: "preview", className: "collapsed-preview"}, "...")
+    ]
+    : line.tokens.map(token => renderToken(token, lineIndex, model, canEval))
   )
   );
 }
