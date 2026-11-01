@@ -6,6 +6,8 @@ import {getObjectSetupLinks, getFieldSetupLinks} from "./setup-links.js";
 import {PageHeader} from "./components/PageHeader.js";
 import {UserInfoModel, PromptTemplate, Constants} from "./utils.js";
 import AgentforceModal from "./components/AgentforceModal.js";
+import ConfirmModal from "./components/ConfirmModal.js";
+import FormulaPrettifierPanel from "./components/FormulaPrettifierPanel.js";
 
 // Constants
 const GET_FIELD_USAGE_LABEL = "Get field usage";
@@ -64,6 +66,8 @@ class Model {
     this.agentforceFormulaAnalyzing = false;
     this.agentforceFormulaCustomInstructions = "";
     this.agentforceFormulaEditMode = false;
+    this.showPrettifierModal = false;
+    this.prettifierField = null;
   }
   /**
    * Notify React that we changed something, so it will rerender the view.
@@ -252,6 +256,14 @@ class Model {
     this.agentforceFormulaError = null;
     this.agentforceFormulaAnalyzing = false;
     this.agentforceFormulaEditMode = false;
+  }
+  openPrettifierModal(fieldRow) {
+    this.showPrettifierModal = true;
+    this.prettifierField = fieldRow;
+  }
+  closePrettifierModal() {
+    this.showPrettifierModal = false;
+    this.prettifierField = null;
   }
   toggleAgentforceFormulaEditMode() {
     this.agentforceFormulaEditMode = !this.agentforceFormulaEditMode;
@@ -1325,6 +1337,12 @@ class FieldRow extends TableRow {
     this.fieldActionsOpen = false;
     this.rowList.model.didUpdate();
   }
+  openPrettifier(e) {
+    e.preventDefault();
+    this.rowList.model.openPrettifierModal(this);
+    this.fieldActionsOpen = false;
+    this.rowList.model.didUpdate();
+  }
   showFieldMetadata() {
     this.rowList.model.showDetailsBox(this.fieldName, this.rowProperties(), this.rowList);
   }
@@ -1626,6 +1644,34 @@ function AgentforceFormulaModalWrapper({model}) {
     resultTitle: "Agentforce Analysis Results",
     resultTagName: "formulaHelper"
   });
+}
+
+// SLDS modal that shows the Formula Prettifier for a formula field. Opens in
+// view mode on that field's formula; a pencil inside the panel allows quick
+// inline edits. Evaluates live against the current record when possible.
+function PrettifierModalWrapper({model}) {
+  if (!model.showPrettifierModal || !model.prettifierField) return null;
+  const fieldRow = model.prettifierField;
+  const formula = fieldRow.fieldDescribe?.calculatedFormula || "";
+  const close = () => { model.closePrettifierModal(); model.didUpdate(); };
+  // No footer buttons — the modal's top-right X (and ESC) close it, so a footer
+  // "Close" would be redundant. onCancel is still passed so the X/ESC handler
+  // has a close callback; the footer itself is hidden via CSS (fp-modal-container).
+  return h(ConfirmModal, {
+    isOpen: true,
+    title: `Formula Prettifier: ${fieldRow.fieldLabel() || fieldRow.fieldName}`,
+    modalSize: "medium",
+    containerClassName: "fp-modal-container",
+    onCancel: close
+  },
+  h(FormulaPrettifierPanel, {
+    formula,
+    objectApiName: model.objectName(),
+    recordId: model.recordId,
+    fieldDataType: fieldRow.fieldDescribe?.type || "",
+    sfHost: model.sfHost
+  })
+  );
 }
 
 class App extends React.Component {
@@ -1954,7 +2000,8 @@ class App extends React.Component {
           : "???")
         ) : null,
         model.detailsBox ? h(DetailsBox, {model}) : null,
-        model.showAgentforceFormulaModal ? h(AgentforceFormulaModalWrapper, {model}) : null
+        model.showAgentforceFormulaModal ? h(AgentforceFormulaModalWrapper, {model}) : null,
+        model.showPrettifierModal ? h(PrettifierModalWrapper, {model}) : null
       )
     );
   }
@@ -2479,6 +2526,11 @@ class FieldActionsCell extends React.Component {
           h("li", {className: "slds-dropdown__item"},
             h("a", {href: "about:blank", onClick: this.onOpenDetails}, "All field metadata")
           ),
+          row.fieldIsCalculated() && h("li", {className: "slds-dropdown__item"},
+            h("a", {href: "about:blank", onClick: (e) => row.openPrettifier(e)},
+              "Prettify formula"
+            )
+          ),
           row.fieldIsCalculated() && (localStorage.getItem("showAgentforceHelperInspect") !== "false") && h("li", {className: "slds-dropdown__item"},
             h("a", {href: "about:blank", onClick: (e) => row.openAgentforceHelper(e)},
               "Agentforce Helper"
@@ -2636,6 +2688,12 @@ class DetailsBox extends React.Component {
     model.sobjectName = args.get("objectType");
     model.useToolingApi = args.has("useToolingApi");
     model.recordId = args.get("recordId");
+    // Opened via "Show formula prettifier": pre-filter the field list to formula
+    // fields (their Type cell contains "calculated") and switch to the Fields tab.
+    if (args.get("filter") === "formula") {
+      model.fieldRows.showColumn("type", "calculated");
+      model.useTab = "fields";
+    }
     model.startLoading();
     model.reactCallback = cb => {
       ReactDOM.render(h(App, {model}), root, cb);

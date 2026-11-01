@@ -43,6 +43,19 @@ export const COLLAPSIBLE_FUNCTIONS = ["IF", "AND", "OR", "CASE"];
 const TAB_SIZE = 4;
 const COLOR_DEPTH_CYCLE = 7;
 
+// Case-insensitive lookups — Salesforce keeps the author's original casing in a
+// formula (e.g. lowercase "if"/"now"), but function names are case-insensitive.
+const FORMULA_FUNCTIONS_UPPER = new Set(FORMULA_FUNCTIONS.map(f => f.toUpperCase()));
+const COLLAPSIBLE_FUNCTIONS_UPPER = new Set(COLLAPSIBLE_FUNCTIONS.map(f => f.toUpperCase()));
+function isFormulaFunction(part, functions) {
+  // Fast path: exact match against the provided list; else case-insensitive.
+  if (functions && functions.includes(part)) return true;
+  return FORMULA_FUNCTIONS_UPPER.has(part.toUpperCase());
+}
+function isCollapsibleFunction(text) {
+  return COLLAPSIBLE_FUNCTIONS_UPPER.has(text.toUpperCase());
+}
+
 // ---------------------------------------------------------------------------
 // Formatting: raw formula string -> prettified multi-line string
 // ---------------------------------------------------------------------------
@@ -73,7 +86,12 @@ function hasNestedBracketsInside(formula, openBracketIndex) {
     const ch = formula[scanPos];
     if (ch === "\"" || ch === "'") {
       scanPos++;
-      while (scanPos < formula.length && formula[scanPos] !== ch) scanPos++;
+      // Skip the string body, honoring \\ escapes so an escaped quote doesn't
+      // look like the closing quote.
+      while (scanPos < formula.length && formula[scanPos] !== ch) {
+        if (formula[scanPos] === "\\") scanPos++;
+        scanPos++;
+      }
       scanPos++;
       continue;
     }
@@ -88,6 +106,14 @@ function extractStringLiteral(formula, startIndex, quoteChar) {
   let str = quoteChar;
   let i = startIndex + 1;
   while (i < formula.length && formula[i] !== quoteChar) {
+    // Backslash escapes the next char (e.g. \" is a literal quote inside the
+    // string, which Salesforce formula syntax permits) — consume both so the
+    // escaped quote doesn't prematurely end the literal.
+    if (formula[i] === "\\" && i + 1 < formula.length) {
+      str += formula[i] + formula[i + 1];
+      i += 2;
+      continue;
+    }
     str += formula[i];
     i++;
   }
@@ -232,9 +258,11 @@ function createToken(part, functions, currentDepth, showWhenCollapsed) {
 
   if (/^\/\*.*\*\/$/.test(part)) {
     type = TOKEN_TYPE.COMMENT;
-  } else if (functions.includes(part)) {
+  } else if (isFormulaFunction(part, functions)) {
+    // Match function names case-insensitively — Salesforce preserves the
+    // author's casing in calculatedFormula (e.g. lowercase "if"/"isnull"/"now").
     type = TOKEN_TYPE.FUNCTION;
-  } else if (/^"[^"]*"$/.test(part) || /^'[^']*'$/.test(part)) {
+  } else if (/^"(?:\\.|[^"\\])*"$/.test(part) || /^'(?:\\.|[^'\\])*'$/.test(part)) {
     type = TOKEN_TYPE.STRING;
   } else if (/^\d+\.?\d*$/.test(part)) {
     type = TOKEN_TYPE.NUMBER;
@@ -275,7 +303,7 @@ function tokenizeLine(line, functions, startDepth) {
   let foundFirstComma = false;
 
   const parts = trimmed
-    .split(/(\s+|[(,)]|==|!=|<=|>=|<>|&&|\|\||\/\*[^*]*\*+(?:[^/*][^*]*\*+)*\/|[+\-*/^<>=&|]|"[^"]*"|'[^']*')/g)
+    .split(/(\s+|[(,)]|==|!=|<=|>=|<>|&&|\|\||\/\*[^*]*\*+(?:[^/*][^*]*\*+)*\/|[+\-*/^<>=&|]|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g)
     .filter(p => p && p.trim());
 
   parts.forEach((part, index) => {
@@ -363,9 +391,14 @@ export function parseLinesToTree(code, functions = FORMULA_FUNCTIONS) {
     });
 
     const isClosingBracketLine = trimmed.startsWith(")");
-    const displayDepth = isClosingBracketLine ? globalDepth : lineStartDepth;
+    // Clamp to 0: a line's indent depth must never be negative. Deeply nested
+    // expressions with trailing operators after all closes (e.g. 15x nested IF
+    // followed by `& " - " & TEXT(...)`) can drive the running bracket depth one
+    // below zero; a negative indent is never valid and would break rendering
+    // (negative padding) and the edit-mode editor (String.repeat throws on < 0).
+    const displayDepth = Math.max(0, isClosingBracketLine ? globalDepth : lineStartDepth);
 
-    const isCollapsible = /(IF|AND|OR|CASE)\s*\(/.test(trimmed);
+    const isCollapsible = /(IF|AND|OR|CASE)\s*\(/i.test(trimmed);
 
     const lineObj = {
       id: index,
@@ -386,7 +419,7 @@ export function parseLinesToTree(code, functions = FORMULA_FUNCTIONS) {
 
     // A collapsible function opens a collapse region at its "(" depth.
     tokens.forEach((token, tokenIndex) => {
-      if (token.type === TOKEN_TYPE.FUNCTION && COLLAPSIBLE_FUNCTIONS.includes(token.text)) {
+      if (token.type === TOKEN_TYPE.FUNCTION && isCollapsibleFunction(token.text)) {
         for (let i = tokenIndex + 1; i < tokens.length; i++) {
           if (tokens[i].type === TOKEN_TYPE.BRACKET && tokens[i].text === "(") {
             const openingDepth = tokens[i].bracketDepth;

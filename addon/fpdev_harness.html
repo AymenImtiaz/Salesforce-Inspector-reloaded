@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<!-- HARNESS-ONLY: local UI/UX review of the Formula Prettifier modal.
+     Renders the REAL ConfirmModal + FormulaPrettifierPanel + formula-prettifier-core,
+     with formula-prettifier-eval.js remapped to a mock so eval works offline.
+     Not shipped. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Formula Prettifier — Harness</title>
+  <link rel="stylesheet" href="styles/slds/slds.css">
+  <link rel="stylesheet" href="formula-prettifier.css">
+  <style>
+    body { margin: 0; background: #f3f3f3; font-family: 'Salesforce Sans', Arial, sans-serif; }
+    .harness-bar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100000;
+      background: #16325c; color: #fff; padding: 8px 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+      font-size: 13px;
+    }
+    .harness-bar select, .harness-bar button {
+      font-size: 13px; padding: 4px 8px; border-radius: 4px; border: 1px solid #c9c9c9; background: #fff; color: #16325c; cursor: pointer;
+    }
+    .harness-note { opacity: .75; margin-left: auto; }
+    /* fake page content behind the modal so the backdrop/contrast reads realistically */
+    .fake-page { padding: 60px 24px 24px; }
+    .fake-row { height: 34px; border-bottom: 1px solid #e5e5e5; display:flex; align-items:center; color:#54698d; font-size:13px; }
+  </style>
+</head>
+<body>
+  <div class="harness-bar">
+    <label>Formula:
+      <select id="formulaPicker"></select>
+    </label>
+    <label>Viewport:
+      <select id="vpPicker">
+        <option value="1280x800">Desktop 1280×800</option>
+        <option value="1024x768">Laptop 1024×768</option>
+        <option value="768x1024">Tablet 768×1024</option>
+        <option value="390x844">Phone 390×844</option>
+      </select>
+    </label>
+    <button id="reopenBtn">Reopen modal</button>
+    <span class="harness-note">real ConfirmModal + FormulaPrettifierPanel · eval mocked</span>
+  </div>
+
+  <div class="fake-page" id="fakePage"></div>
+  <div id="root"></div>
+
+  <script src="react.js"></script>
+  <script src="react-dom.js"></script>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "./formula-prettifier-eval.js": "./fpdev_eval_mock.js"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import ConfirmModal from "./components/ConfirmModal.js";
+    import FormulaPrettifierPanel from "./components/FormulaPrettifierPanel.js";
+
+    const h = React.createElement;
+
+    const FORMULAS = {
+      "Lead Tier (nested IF/AND/OR)":
+        'IF(AND(NumberOfEmployees >= 1000, AnnualRevenue >= 1000000), "Enterprise", IF(OR(NumberOfEmployees >= 100, AnnualRevenue >= 100000), "Mid-Market", "SMB"))',
+      "Priority Score (CASE)":
+        'CASE(Rating, "Hot", 100, "Warm", 50, "Cold", 10, 0)',
+      "Is Qualified (AND/NOT/ISBLANK)":
+        'AND( NOT(ISBLANK(Email)), NumberOfEmployees > 10, NOT(ISPICKVAL(Status, "Closed - Not Converted")) )',
+      "Company Link (HYPERLINK)":
+        'HYPERLINK("https://www.google.com/search?q=" & Company, Company, "_blank")',
+      "Full Display (text concat)":
+        'UPPER(LEFT(FirstName, 1)) & LOWER(MID(FirstName, 2, 100)) & " " & LastName & IF(ISBLANK(Company), "", " (" & Company & ")")',
+      "Days Since Created (date math)":
+        'TODAY() - DATEVALUE(CreatedDate)',
+      "Lengthy real-world (Lead Full Profile)":
+        `IF(ISBLANK(FirstName) && ISBLANK(LastName), "Unnamed Lead", TRIM(UPPER(LEFT(FirstName, 1)) & LOWER(MID(FirstName, 2, 40)) & " " & UPPER(LEFT(LastName, 1)) & LOWER(MID(LastName, 2, 40)))) & " | Tier: " & IF(AND(NumberOfEmployees >= 5000, AnnualRevenue >= 50000000), "Strategic Enterprise", IF(AND(NumberOfEmployees >= 1000, AnnualRevenue >= 10000000), "Enterprise", IF(OR(NumberOfEmployees >= 250, AnnualRevenue >= 1000000), "Mid-Market", IF(OR(NumberOfEmployees >= 25, AnnualRevenue >= 100000), "SMB", "Startup")))) & " | Score: " & TEXT(MIN(100, (CASE(Rating, "Hot", 40, "Warm", 25, "Cold", 10, 0) + CASE(LeadSource, "Referral", 30, "Partner", 25, "Web", 15, "Phone Inquiry", 10, "Trade Show", 10, 5) + IF(NOT(ISBLANK(Email)), 10, 0) + IF(NOT(ISBLANK(Phone)), 5, 0) + IF(NOT(ISBLANK(Company)), 10, 0) + IF(NumberOfEmployees > 1000, 20, IF(NumberOfEmployees > 100, 10, 5)) + IF(CONTAINS(Title, "VP") || CONTAINS(Title, "Chief") || CONTAINS(Title, "Director") || CONTAINS(Title, "Head"), 15, IF(CONTAINS(Title, "Manager"), 8, 0))))) & " | Status: " & IF(ISPICKVAL(Status, "Closed - Not Converted"), "LOST", IF(ISPICKVAL(Status, "Closed - Converted"), "WON", IF(ISPICKVAL(Status, "Working - Contacted"), "ACTIVE", "NEW"))) & " | Qualified: " & IF(AND(NOT(ISBLANK(Email)), NumberOfEmployees > 10, NOT(ISPICKVAL(Status, "Closed - Not Converted"))), "Yes", "No") & " | Region: " & CASE(LEFT(BLANKVALUE(PostalCode, "0"), 1), "9", "West", "8", "Mountain", "7", "South Central", "6", "Midwest", "5", "Midwest", "3", "Southeast", "2", "Mid-Atlantic", "1", "Northeast", "0", "New England", "Unknown") & " | Age(days): " & TEXT(TODAY() - DATEVALUE(CreatedDate)) & IF(NOT(ISBLANK(Company)), " | Research: " & HYPERLINK("https://www.google.com/search?q=" & SUBSTITUTE(Company, " ", "+"), "Look up " & Company, "_blank"), "")`,
+      "Deeply nested (stress test)":
+        'IF(AND(ISPICKVAL(Rating,"Hot"), OR(NumberOfEmployees>=1000, AnnualRevenue>=1000000)), IF(NOT(ISBLANK(Email)), "Priority Enterprise Lead", "Enterprise (no email)"), IF(ISPICKVAL(Rating,"Warm"), "Nurture", CASE(MOD(NumberOfEmployees,3), 0, "Bucket A", 1, "Bucket B", "Bucket C")))'
+    };
+
+    const picker = document.getElementById("formulaPicker");
+    Object.keys(FORMULAS).forEach(name => {
+      const o = document.createElement("option");
+      o.value = name; o.textContent = name; picker.appendChild(o);
+    });
+
+    // fake background rows
+    const fp = document.getElementById("fakePage");
+    ["Address","Annual Revenue","Company","Email","Lead Tier","Priority Score","Is Qualified","Full Display","Rating","Status","Title","Website"]
+      .forEach(l => { const d=document.createElement("div"); d.className="fake-row"; d.textContent=l; fp.appendChild(d); });
+
+    const root = document.getElementById("root");
+    let openKey = 0;
+
+    function render() {
+      const name = picker.value;
+      const formula = FORMULAS[name];
+      ReactDOM.render(
+        h(ConfirmModal, {
+          key: name + ":" + openKey, // remount on formula change / reopen
+          isOpen: true,
+          title: "Formula Prettifier: " + name.replace(/ \(.*/, ""),
+          modalSize: "medium",
+          containerClassName: "fp-modal-container",
+          onCancel: () => reopenLater()
+        },
+        h(FormulaPrettifierPanel, {
+          formula,
+          objectApiName: "Lead",
+          recordId: "00QO800000i1UU9MAM",
+          fieldDataType: "string",
+          sfHost: "example.my.salesforce.com"
+        })),
+        root
+      );
+    }
+    function reopenLater() {
+      // On close, immediately reopen so the harness always shows the modal.
+      openKey++; render();
+    }
+
+    picker.addEventListener("change", () => { openKey++; render(); });
+    document.getElementById("reopenBtn").addEventListener("click", () => { openKey++; render(); });
+    document.getElementById("vpPicker").addEventListener("change", (e) => {
+      const [w,hh] = e.target.value.split("x").map(Number);
+      window.resizeTo(w, hh + 90);
+    });
+
+    render();
+    window.__fpRender = render;
+  </script>
+</body>
+</html>

@@ -24,6 +24,8 @@ body.fp-embedded {
   --disabled-color: #c9c9c9;
   --text-muted: #999;
   --shadow-purple: rebeccapurple;
+  /* Monospace stack — kept identical to the original AppExchange app. */
+  --fp-mono: 'Courier New', Consolas, Monaco, monospace;
 }
 
 /* ========================================
@@ -238,9 +240,11 @@ body.fp-embedded {
 
 .formula-result-badge {
   display: flex;
-  align-items: center;
+  align-items: flex-start;        /* label stays top-aligned when the value wraps */
   gap: 6px;
-  padding: 4px 12px;
+  padding: 6px 12px;
+  max-width: 70ch;                /* roomy; wraps to multiple lines beyond this */
+  min-width: 0;
   background: linear-gradient(135deg, rgba(102, 51, 153, 0.08) 0%, rgba(102, 51, 153, 0.04) 100%);
   border: 1px solid rgba(102, 51, 153, 0.2);
   border-radius: 12px;
@@ -250,20 +254,26 @@ body.fp-embedded {
 .result-label {
   color: #706e6b;
   font-weight: 500;
+  flex: 0 0 auto;
+  line-height: 1.4;
 }
 
+/* Show the FULL result value — wrap to multiple lines when it's too long to fit
+   on one, rather than truncating with an ellipsis. */
 .result-value {
   color: rebeccapurple;
   font-weight: 600;
-  font-family: 'Courier New', monospace;
-  word-break: break-all;
+  font-family: var(--fp-mono);
+  min-width: 0;
+  white-space: normal;
   overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.4;
 }
 
-.result-value-markup {
-  max-width: 100%;
-  display: inline-block;
-  vertical-align: top;
+.result-image {
+  max-height: 20px;
+  vertical-align: middle;
 }
 
 .result-hyperlink {
@@ -271,10 +281,31 @@ body.fp-embedded {
   font-weight: 600;
   text-decoration: underline;
   transition: opacity 0.2s ease;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.4;
 }
 
 .result-hyperlink:hover {
   opacity: 0.8;
+}
+
+/* Header title: sparkles icon + "Prettified Formula" heading, left-aligned. */
+.output-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--primary-color);
+  flex: 0 0 auto;
+}
+.output-title .slds-text-heading_small {
+  color: #080707;
+  font-weight: 600;
+}
+.output-title .fp-icon {
+  fill: var(--primary-color);
 }
 
 .result-help-icon {
@@ -382,7 +413,7 @@ body.fp-embedded {
 }
 
 .formula-output {
-  font-family: 'Courier New', Consolas, Monaco, monospace;
+  font-family: var(--fp-mono);
   font-size: 14px;
   line-height: 1.4;
   background: var(--background-white);
@@ -471,7 +502,34 @@ body.fp-embedded {
   position: relative;
 }
 
-/* Indent guide lines intentionally disabled to match the app's clean output. */
+/* Dynamic indent guide lines (one faint vertical rule per nesting depth), ported
+   from the app. The app drives width with a --indent-depth CSS var, but React 15
+   drops custom properties from inline styles, so we key the visible width off the
+   data-indent attribute instead (TAB_SIZE = 4ch). */
+.formula-line[data-indent] {
+  background-image: repeating-linear-gradient(
+    to right,
+    rgba(128, 128, 128, 0.15) 0,
+    rgba(128, 128, 128, 0.15) 1px,
+    transparent 1px,
+    transparent 4ch
+  );
+  background-position: 0 0;
+  background-repeat: no-repeat;
+}
+.formula-line[data-indent="0"] { background-image: none; }
+.formula-line[data-indent="1"] { background-size: 4ch 100%; }
+.formula-line[data-indent="2"] { background-size: 8ch 100%; }
+.formula-line[data-indent="3"] { background-size: 12ch 100%; }
+.formula-line[data-indent="4"] { background-size: 16ch 100%; }
+.formula-line[data-indent="5"] { background-size: 20ch 100%; }
+.formula-line[data-indent="6"] { background-size: 24ch 100%; }
+.formula-line[data-indent="7"] { background-size: 28ch 100%; }
+.formula-line[data-indent="8"] { background-size: 32ch 100%; }
+.formula-line[data-indent="9"] { background-size: 36ch 100%; }
+.formula-line[data-indent="10"] { background-size: 40ch 100%; }
+.formula-line[data-indent="11"] { background-size: 44ch 100%; }
+.formula-line[data-indent="12"] { background-size: 48ch 100%; }
 
 /* ========================================
    Syntax Highlighting Colors
@@ -966,7 +1024,7 @@ lightning-combobox {
   padding: 6px 10px;
   border-radius: 5px;
   font-size: 12px;
-  font-family: 'Courier New', Consolas, Monaco, monospace;
+  font-family: var(--fp-mono);
   font-weight: 600;
   z-index: 10000;
   pointer-events: none;
@@ -1272,4 +1330,223 @@ lightning-combobox {
 .large-textarea {
   --slds-c-textarea-sizing-min-height: 200px;
   min-height: 200px;
+}
+/* ========================================
+   Prettifier panel inside the SLDS modal (Inspect page integration)
+   ======================================== */
+/* Large, content-fit modal: wide enough that typical formula lines don't wrap,
+   but the height follows the formula (short formula → compact modal; long
+   formula → grows, then the formula area scrolls). The modal never exceeds the
+   viewport. The `.slds-modal_medium` prefix matches SLDS's own specificity so
+   these win over its width:70%/max-width:75rem and the base height:100%. */
+/* Center the content-fit modal in the viewport. .slds-modal is a full-screen
+   fixed layer that normally lets the container stick to the top; make just our
+   modal's layer a flex-center (scoped via :has so other modals are untouched). */
+.slds-modal:has(.fp-modal-container) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.slds-modal_medium .slds-modal__container.fp-modal-container,
+.slds-modal .slds-modal__container.fp-modal-container {
+  width: min(92vw, 1120px);
+  max-width: min(92vw, 1120px);
+  min-width: 0;
+  height: auto;              /* fit the content, not the viewport */
+  max-height: 88vh;
+}
+/* Header, close button (X) and footer keep the STANDARD SLDS modal look — no
+   overrides — so this matches every other Inspector modal. Only the content
+   padding is trimmed slightly so the formula card isn't cramped. */
+.fp-modal-container .slds-modal__footer {
+  display: none;
+}
+.fp-modal-container .slds-modal__content {
+  overflow: visible;
+}
+/* The panel is the whole modal body; the output-section is the single bordered
+   card holding the header toolbar + the formula. No outer padding so the card
+   fills the modal content area (the modal supplies the surrounding padding). */
+.fp-panel {
+  position: relative;
+}
+.fp-panel .output-section {
+  padding: 0;
+  overflow: hidden;
+}
+/* In the modal, the toolbar sits at the top of the card right under the modal
+   header, so the app's "Copied!" tooltip (which points UP) would be clipped by
+   the header / card top. Flip it to appear BELOW the copy button instead. */
+.fp-panel .copied-tooltip {
+  bottom: auto;
+  top: 100%;
+  margin-bottom: 0;
+  margin-top: 6px;
+  z-index: 10;
+}
+.fp-panel .copied-tooltip::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: var(--primary-color);
+}
+.fp-panel .output-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-small);
+  margin: 0;
+  padding: 8px 10px 8px 12px;
+  min-height: 40px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8f8f8 100%);
+  border-bottom: 1px solid var(--border-color);
+}
+.fp-panel .header-actions {
+  min-width: 0;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+/* Toolbar icon buttons (copy / refresh / edit) share one recessed look. */
+.fp-panel .copy-button,
+.fp-panel .refresh-button,
+.fp-panel .fp-edit-button {
+  color: var(--primary-color);
+  --slds-c-icon-color-foreground: var(--primary-color);
+}
+.fp-panel .copy-button:hover:not([disabled]),
+.fp-panel .refresh-button:hover:not([disabled]),
+.fp-panel .fp-edit-button:hover:not([disabled]) {
+  color: var(--primary-hover);
+  background-color: rgba(102, 51, 153, 0.08);
+}
+/* Active (editing) state: the pencil becomes a filled purple "apply" button. */
+.fp-panel .fp-edit-button_active,
+.fp-panel .fp-edit-button_active.slds-button {
+  background-color: var(--primary-color);
+  color: #ffffff;
+}
+.fp-panel .fp-edit-button_active:hover:not([disabled]) {
+  background-color: var(--primary-hover);
+  color: #ffffff;
+}
+/* Overlay editor: a transparent-text textarea layered exactly on top of a
+   syntax-highlighted layer showing the same characters. Both MUST share
+   identical box + text metrics so the caret lines up with the colored text.
+   It sits inside the output-section card, so no separate border — just a white
+   surface that visually matches view mode. */
+/* Scratchpad notice shown above the editor, so users know edits are temporary
+   (evaluate variations against this record) and are NOT saved to the field. */
+.fp-edit-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #fef8e6;
+  border-bottom: 1px solid #f2e6bf;
+  color: #5c4a12;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.fp-edit-note .fp-icon {
+  flex: 0 0 auto;
+  fill: #a6801f;
+}
+.fp-editor {
+  position: relative;
+  display: flex;
+  max-height: 55vh;
+  overflow: hidden;
+  background: var(--background-white);
+}
+/* Line-number gutter, mirroring view mode's .line-gutter. */
+.fp-editor-gutter {
+  flex: 0 0 32px;
+  width: 32px;
+  padding: 10px 4px 10px 0;
+  box-sizing: border-box;
+  background: var(--background-light);
+  border-right: 1px solid #e0e0e0;
+  overflow: hidden;
+  font-family: var(--fp-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  color: #999;
+  text-align: right;
+  user-select: none;
+}
+.fp-editor-gutter-num {
+  min-height: 1.4em;
+  /* Editor text is 14px/1.4; keep numbers on the same baseline grid. */
+  height: calc(14px * 1.4);
+}
+.fp-editor-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.fp-editor-highlight,
+.fp-editor-textarea {
+  margin: 0;
+  border: 0;
+  padding: 10px 12px;
+  font-family: var(--fp-mono);
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: pre;
+  tab-size: 4;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 200px;
+}
+.fp-editor-highlight {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  pointer-events: none;
+  color: var(--token-text);
+}
+.fp-editor-line {
+  min-height: 1.4em;
+}
+.fp-editor-textarea {
+  position: relative;
+  height: 100%;
+  min-height: 200px;
+  max-height: 55vh;
+  resize: none;
+  overflow: auto;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--primary-color);
+  outline: none;
+}
+/* The formula lives on a white surface inside the card; it is the single scroll
+   region (the modal content does not add a second one). */
+.fp-panel .formula-output {
+  background: var(--background-white);
+  padding: 8px 0;
+  max-height: 55vh;
+  overflow: auto;
+}
+
+/* Narrow widths: the header toolbar can't fit heading + badge + 3 buttons, so
+   drop the heading text (keep the sparkles icon) and let the badge shrink first,
+   so the action buttons never collide with the heading. */
+@media (max-width: 560px) {
+  .fp-panel .output-title .slds-text-heading_small {
+    display: none;
+  }
+  .fp-panel .output-header {
+    gap: 4px;
+  }
+  .formula-result-badge {
+    max-width: 30ch;
+  }
+}
+@media (max-width: 430px) {
+  /* Very narrow: hide the result badge entirely (it's still shown in the app's
+     wider window); the buttons and formula are what matter on a phone. */
+  .fp-panel .header-actions .formula-result-badge {
+    display: none;
+  }
 }

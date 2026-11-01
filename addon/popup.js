@@ -3867,6 +3867,26 @@ class AllDataSelection extends React.PureComponent {
       return undefined;
     }
   }
+  // Opens the Show All Data (Inspect) page pre-filtered to formula fields, ready
+  // for the "Prettify formula" per-field action.
+  getFormulaPrettifierUrl(toolingApi) {
+    let {sfHost, selectedValue} = this.props;
+    if (selectedValue) {
+      let args = new URLSearchParams();
+      args.set("host", sfHost);
+      args.set("objectType", selectedValue.sobject.name);
+      if (toolingApi) {
+        args.set("useToolingApi", "1");
+      }
+      if (selectedValue.recordId) {
+        args.set("recordId", selectedValue.recordId);
+      }
+      args.set("filter", "formula");
+      return "inspect.html?" + args;
+    } else {
+      return undefined;
+    }
+  }
   getUrl(basePath, params) {
     const {sfHost, selectedValue} = this.props;
     const args = new URLSearchParams({host: sfHost, ...params});
@@ -4349,6 +4369,21 @@ class AllDataSelection extends React.PureComponent {
           )
         )
       ),
+      // Opens Show All Data pre-filtered to formula fields, where each formula
+      // field offers a "Prettify formula" action (SLDS modal).
+      this.getFormulaPrettifierUrl(false)
+        ? h(
+          "a",
+          {
+            ref: "showFormulaPrettifierBtn",
+            href: this.getFormulaPrettifierUrl(false),
+            target: linkTarget,
+            className:
+                "slds-button slds-button_neutral slds-m-top_xx-small page-button slds-button slds-button_neutral slds-m-top_xx-small",
+          },
+          h("span", {}, "Show formula ", h("u", {}, "p"), "rettifier")
+        )
+        : null,
       isFieldsPresent
         ? h(
           "button",
