@@ -60,22 +60,23 @@ test.describe("Formula Prettifier", () => {
   test("Prettify action appears only for formula fields", async ({page, extensionId}) => {
     await initInspectPage(page, extensionId);
 
-    // Formula field row -> has the action
+    // A non-formula field (Name) row: its actions menu has NO "Prettify formula".
+    const nameRow = page.locator("tr", {hasText: "Account Name"}).first();
+    await nameRow.locator("td.field-actions button").first().click();
+    await page.waitForTimeout(250);
+    // The menu is open (its own "All field metadata" item is visible) but no Prettify action.
+    await expect(nameRow.locator("a:has-text('All field metadata')")).toBeVisible();
+    await expect(nameRow.locator("a:has-text('Prettify formula')")).toHaveCount(0);
+
+    // Dismiss the menu by clicking it closed (toggle the same button).
+    await nameRow.locator("td.field-actions button").first().click();
+    await page.waitForTimeout(150);
+
+    // The formula field row DOES expose the action.
     const formulaRow = page.locator("tr", {hasText: "Formula_Field__c"}).first();
     await formulaRow.locator("td.field-actions button").first().click();
     await page.waitForTimeout(250);
-    await expect(page.locator("a:has-text('Prettify formula')")).toBeVisible();
-
-    // Close this menu, then check a non-formula field (Name) has no Prettify action
-    await page.keyboard.press("Escape");
-    await page.waitForTimeout(100);
-
-    const nameRow = page.locator("tr", {hasText: "Account Name"}).first();
-    if (await nameRow.locator("td.field-actions button").first().isVisible()) {
-      await nameRow.locator("td.field-actions button").first().click();
-      await page.waitForTimeout(250);
-      await expect(page.locator("a:has-text('Prettify formula')")).not.toBeVisible();
-    }
+    await expect(formulaRow.locator("a:has-text('Prettify formula')")).toBeVisible();
   });
 
   test("Opens modal and renders the prettified formula", async ({page, extensionId}) => {

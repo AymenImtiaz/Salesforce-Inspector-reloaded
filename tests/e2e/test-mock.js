@@ -177,7 +177,16 @@ export async function routeMock(route, host) {
               {value: "Partner", label: "Partner", active: true}
             ],
             referenceTo: []},
-          {name: "Description", label: "Description", type: "textarea", createable: true, updateable: true, nillable: true, referenceTo: []}
+          {name: "Description", label: "Description", type: "textarea", createable: true, updateable: true, nillable: true, referenceTo: []},
+          {name: "Formula_Field__c",
+            label: "Formula Field",
+            type: "string",
+            calculated: true,
+            calculatedFormula: "IF(ISBLANK(Name), \"No Name\", UPPER(Name)) & \" - \" & TEXT(YEAR(TODAY()))",
+            createable: false,
+            updateable: false,
+            nillable: true,
+            referenceTo: []}
         ],
         childRelationships: [
           {relationshipName: "Contacts", childSObject: "Contact", field: "AccountId"}
