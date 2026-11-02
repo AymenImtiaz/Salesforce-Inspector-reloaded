@@ -310,6 +310,16 @@ export async function routeMock(route, host) {
             createable: false,
             updateable: false,
             nillable: true,
+            referenceTo: []},
+          {name: "Case_Formula__c",
+            label: "Case Formula",
+            type: "double",
+            calculated: true,
+            // No nested brackets: this is the shape that used to collapse onto one line.
+            calculatedFormula: "CASE(Type, \"Customer - Direct\", 3, \"Customer - Channel\", 2, \"Partner\", 1, 0)",
+            createable: false,
+            updateable: false,
+            nillable: true,
             referenceTo: []}
         ],
         childRelationships: [

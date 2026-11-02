@@ -64,13 +64,15 @@ function getIndent(depth) {
   return " ".repeat(depth * TAB_SIZE);
 }
 
-// Function name immediately preceding an opening bracket (upper-case letters only).
+// Function name immediately preceding an opening bracket. Case-insensitive:
+// Salesforce preserves the author's casing in calculatedFormula (e.g. lowercase
+// "case"/"if"), and function names are case-insensitive.
 function extractFunctionName(formula, bracketIndex) {
   let lookback = bracketIndex - 1;
   while (lookback >= 0 && /\s/.test(formula[lookback])) lookback--;
 
   let functionName = "";
-  while (lookback >= 0 && /[A-Z]/.test(formula[lookback])) {
+  while (lookback >= 0 && /[A-Za-z]/.test(formula[lookback])) {
     functionName = formula[lookback] + functionName;
     lookback--;
   }
@@ -172,7 +174,10 @@ export function formatFormula(formula) {
         justAddedComment = false;
       }
       const functionName = extractFunctionName(formula, i);
-      const hasNested = hasNestedBracketsInside(formula, i);
+      // CASE is a multi-branch construct — keep each branch on its own line even
+      // when no argument contains a nested call (e.g. CASE(Field, "a", 1, "b", 2, 0)),
+      // which would otherwise collapse onto a single, unreadable line.
+      const hasNested = hasNestedBracketsInside(formula, i) || functionName.toUpperCase() === "CASE";
 
       bracketInfoStack.push({isMultiline: hasNested, functionName});
       result += "(";

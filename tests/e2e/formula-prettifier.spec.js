@@ -38,11 +38,10 @@ test.describe("Formula Prettifier", () => {
     await page.waitForSelector("table.slds-table", {timeout: 2000});
   }
 
-  /** Opens the field-actions dropdown on the formula field row and clicks "Prettify formula". */
-  async function openPrettifierModal(page) {
-    // The formula field (Formula_Field__c) is the one with a "Prettify formula" action.
-    // Open its field-actions dropdown, then click the action.
-    const formulaRow = page.locator("tr", {hasText: "Formula_Field__c"}).first();
+  /** Opens the field-actions dropdown on a formula field row and clicks "Prettify formula". */
+  async function openPrettifierModal(page, fieldApiName = "Formula_Field__c") {
+    // Open the field's actions dropdown, then click the "Prettify formula" action.
+    const formulaRow = page.locator("tr", {hasText: fieldApiName}).first();
     await expect(formulaRow).toBeVisible();
 
     const actionsButton = formulaRow.locator("td.field-actions button").first();
@@ -160,5 +159,25 @@ test.describe("Formula Prettifier", () => {
     await page.waitForTimeout(250);
 
     await expect(page.locator(".fp-panel")).not.toBeVisible();
+  });
+
+  test("CASE branches are laid out one per line (not collapsed)", async ({page, extensionId}) => {
+    await initInspectPage(page, extensionId);
+    // Case_Formula__c = CASE(Type, "Customer - Direct", 3, ...) with no nested
+    // brackets — this is the shape that used to collapse onto a single line.
+    await openPrettifierModal(page, "Case_Formula__c");
+
+    const output = page.locator(".formula-output");
+    await expect(output).toBeVisible();
+
+    // The formatted output must span multiple lines (one formula-line per branch),
+    // not a single collapsed line.
+    const lineCount = await output.locator(".formula-line").count();
+    expect(lineCount).toBeGreaterThan(1);
+
+    // Content integrity: the CASE function and its literal branches are present.
+    const text = await output.textContent();
+    expect(text).toContain("CASE");
+    expect(text).toContain("Customer - Direct");
   });
 });
