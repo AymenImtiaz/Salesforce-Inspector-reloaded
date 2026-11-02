@@ -732,17 +732,44 @@ class FpEval {
     if (result == null) return String.valueOf(result);
     if (String.isNotBlank(fieldDataType) && fieldDataType.containsIgnoreCase('Percent') && result instanceof Decimal) {
       Decimal percentValue = ((Decimal) result) * 100;
-      percentValue = percentValue.stripTrailingZeros();
-      if (percentValue.scale() > 0) return percentValue.toPlainString();
-      else return percentValue.intValue().toString();
+      return formatDecimal(percentValue);
     }
     if (result instanceof Decimal) {
-      Decimal resultDecimal = (Decimal) result;
-      resultDecimal = resultDecimal.stripTrailingZeros();
-      if (resultDecimal.scale() > 0) return resultDecimal.toPlainString();
-      else return resultDecimal.intValue().toString();
+      return formatDecimal((Decimal) result);
+    }
+    // Date results: show the plain date (yyyy-MM-dd), not a datetime. A DATE-typed
+    // formula result comes back as a Datetime at midnight, so String.valueOf would
+    // render a spurious " 00:00:00". Only keep the time component when the field is
+    // actually a Date/Time (or Time) type.
+    Boolean isDateOnlyField = String.isBlank(fieldDataType)
+      || (fieldDataType.containsIgnoreCase('Date') && !fieldDataType.containsIgnoreCase('Date/Time') && !fieldDataType.containsIgnoreCase('Datetime'));
+    if (result instanceof Date) {
+      return String.valueOf((Date) result);
+    }
+    if (result instanceof Datetime) {
+      Datetime dt = (Datetime) result;
+      // A midnight datetime from a DATE-typed formula (or when the field is a Date)
+      // should display as a plain date.
+      if (isDateOnlyField && dt == Datetime.newInstanceGmt(dt.yearGmt(), dt.monthGmt(), dt.dayGmt())) {
+        return dt.formatGmt('yyyy-MM-dd');
+      }
+      return dt.formatGmt('yyyy-MM-dd HH:mm:ss');
     }
     return String.valueOf(result);
+  }
+
+  // Format a Decimal as a plain string without trailing zeros. IMPORTANT: for a
+  // whole number we must NOT use intValue() — that casts to a 32-bit Apex Integer
+  // and overflows for values beyond +/-2,147,483,647 (e.g. an AnnualRevenue of
+  // 8,380,000,000 would wrap to -209,934,592). toPlainString() preserves the full
+  // value with no exponent and no spurious ".0" for whole numbers.
+  String formatDecimal(Decimal value) {
+    Decimal stripped = value.stripTrailingZeros();
+    // Normalize negative scale (which stripTrailingZeros can produce for integers
+    // ending in zeros, e.g. 8380000000) back to scale 0 so toPlainString() emits
+    // plain digits rather than exponent notation.
+    if (stripped.scale() < 0) stripped = stripped.setScale(0);
+    return stripped.toPlainString();
   }
 }
 `;
